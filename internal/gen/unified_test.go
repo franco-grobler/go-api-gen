@@ -1,0 +1,396 @@
+package gen
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/franco-grobler/go-api-gen/internal/config"
+	"github.com/franco-grobler/go-api-gen/internal/workspace"
+)
+
+// unify writes a workspace, runs the generator, and returns the unified spec
+// both as text and decoded.
+func unify(
+	t *testing.T,
+	files map[string]string,
+) (text string, doc map[string]any, err error) {
+	t.Helper()
+	dir := t.TempDir()
+	files["go.mod"] = "module github.com/acme/monorepo\n\ngo 1.24\n"
+	for name, body := range files {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg, err := config.Load(filepath.Join(dir, "api", "go-api-gen.yaml"))
+	if err != nil {
+		return "", nil, err
+	}
+	ws, err := workspace.Load(cfg)
+	if err != nil {
+		return "", nil, err
+	}
+	g := New(ws)
+	if err := g.Run(); err != nil {
+		return "", nil, err
+	}
+	data, err := g.Unified()
+	if err != nil {
+		return "", nil, err
+	}
+
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unified spec is not valid YAML: %v\n%s", err, data)
+	}
+	return string(data), doc, nil
+}
+
+// service builds a spec with the given title and path entries.
+func service(title, paths string) string {
+	return "openapi: 3.1.0\n" +
+		"info: { title: " + title + ", version: \"1\" }\n" +
+		"paths:\n" + paths
+}
+
+const unifiedConfig = `
+version: 1
+schemas:
+  - path: shared
+    output: ../gen/apitypes
+packages:
+  - spec: services/billing/api.yaml
+    output: ../gen/billing
+    generate: [types]
+  - spec: services/identity/api.yaml
+    output: ../gen/identity
+    generate: [types]
+unified:
+  output: ../gen/openapi.yaml
+  title: Acme Platform API
+  version: "2026.1"
+  servers:
+    - { url: 'https://api.acme.io', description: Production }
+`
+
+func twoServices() map[string]string {
+	return map[string]string{
+		"api/go-api-gen.yaml": unifiedConfig,
+		"api/shared/user.yaml": "components:\n  schemas:\n    User: { type: " +
+			"object, required: [id], properties: { id: { type: string } } }\n",
+		"api/services/billing/api.yaml": service("Billing", `  /invoices:
+    get:
+      operationId: listInvoices
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+components:
+  schemas:
+    Invoice:
+      type: object
+      required: [payer]
+      properties:
+        payer: { $ref: ../../shared/user.yaml#/components/schemas/User }
+`),
+		"api/services/identity/api.yaml": service("Identity", `  /users:
+    get:
+      operationId: listUsers
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: ../../shared/user.yaml#/components/schemas/User }
+`),
+	}
+}
+
+func TestUnifyMergesServices(t *testing.T) {
+	text, doc, err := unify(t, twoServices())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	info := mapAt(t, doc, "info")
+	if info["title"] != "Acme Platform API" || info["version"] != "2026.1" {
+		t.Errorf("info = %v, want the configured title and version", info)
+	}
+	// A version like 2026.1 must stay a string, not be re-read as a float.
+	if _, ok := info["version"].(string); !ok {
+		t.Errorf("info.version = %T, want a string", info["version"])
+	}
+
+	paths := mapAt(t, doc, "paths")
+	for _, want := range []string{"/invoices", "/users"} {
+		if _, ok := paths[want]; !ok {
+			t.Errorf("path %q missing from the unified document", want)
+		}
+	}
+
+	// Shared schemas are pooled once, not once per contributing service.
+	schemas := mapAt(t, doc, "components", "schemas")
+	for _, want := range []string{"Invoice", "User"} {
+		if _, ok := schemas[want]; !ok {
+			t.Errorf("component %q missing", want)
+		}
+	}
+	if strings.Count(text, "\n        User:") != 1 {
+		t.Errorf("User was emitted more than once:\n%s", text)
+	}
+
+	// Nothing may still point outside the document.
+	if strings.Contains(text, "../../shared") {
+		t.Errorf("unified document still references another file:\n%s", text)
+	}
+
+	servers := sliceAt(t, doc, "servers")
+	if len(servers) != 1 {
+		t.Fatalf("servers = %v, want exactly one", servers)
+	}
+	first := mapOf(t, servers[0], "servers[0]")
+	if first["url"] != "https://api.acme.io" {
+		t.Errorf("servers = %v, want the configured server", servers)
+	}
+}
+
+// Tagging by Go package name would be useless, since services conventionally
+// generate into a package called api; the service title is what distinguishes
+// them.
+func TestUnifyTagsByServiceTitle(t *testing.T) {
+	_, doc, err := unify(t, twoServices())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var names []string
+	for i, tag := range sliceAt(t, doc, "tags") {
+		entry := mapOf(t, tag, fmt.Sprintf("tags[%d]", i))
+		name, ok := entry["name"].(string)
+		if !ok {
+			t.Fatalf("tags[%d].name is %T, want a string", i, entry["name"])
+		}
+		names = append(names, name)
+	}
+	if got := strings.Join(names, ","); got != "Billing,Identity" {
+		t.Errorf("tags = %s, want Billing,Identity", got)
+	}
+
+	paths := mapAt(t, doc, "paths")
+	billing := opTags(t, paths, "/invoices", "get")
+	if len(billing) != 1 || billing[0] != "Billing" {
+		t.Errorf("/invoices tags = %v, want [Billing]", billing)
+	}
+	identity := opTags(t, paths, "/users", "get")
+	if len(identity) != 1 || identity[0] != "Identity" {
+		t.Errorf("/users tags = %v, want [Identity]", identity)
+	}
+}
+
+func TestUnifyPreservesAuthoredTags(t *testing.T) {
+	files := twoServices()
+	files["api/services/identity/api.yaml"] = service("Identity", `  /users:
+    get:
+      operationId: listUsers
+      tags: [people]
+      responses:
+        "200": { description: ok }
+`)
+	_, doc, err := unify(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := opTags(t, mapAt(t, doc, "paths"), "/users", "get")
+	if len(got) != 1 || got[0] != "people" {
+		t.Errorf("tags = %v; an operation's own tags must be left alone", got)
+	}
+}
+
+// Two services may own different methods of one path, which is a normal
+// gateway arrangement.
+func TestUnifyMergesMethodsOfOnePath(t *testing.T) {
+	files := twoServices()
+	files["api/services/billing/api.yaml"] = service("Billing", `  /things:
+    get:
+      operationId: getThing
+      responses:
+        "200": { description: ok }
+`)
+	files["api/services/identity/api.yaml"] = service("Identity", `  /things:
+    post:
+      operationId: postThing
+      responses:
+        "200": { description: ok }
+`)
+	_, doc, err := unify(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thing := mapAt(t, doc, "paths", "/things")
+	if _, ok := thing["get"]; !ok {
+		t.Error("merged path lost the GET contributed by billing")
+	}
+	if _, ok := thing["post"]; !ok {
+		t.Error("merged path lost the POST contributed by identity")
+	}
+}
+
+func TestUnifyRejectsConflicts(t *testing.T) {
+	tests := []struct {
+		name              string
+		billing, identity string
+		want              string
+	}{{
+		name: "same method on same path",
+		billing: service("Billing", `  /things:
+    get:
+      operationId: billingGetThing
+      responses:
+        "200": { description: ok }
+`),
+		identity: service("Identity", `  /things:
+    get:
+      operationId: identityGetThing
+      responses:
+        "200": { description: ok }
+`),
+		want: `path "/things" defines "get" in both`,
+	}, {
+		name: "duplicate operationId",
+		billing: service("Billing", `  /a:
+    get:
+      operationId: dup
+      responses:
+        "200": { description: ok }
+`),
+		identity: service("Identity", `  /b:
+    get:
+      operationId: dup
+      responses:
+        "200": { description: ok }
+`),
+		want: `operationId "dup" is used by both`,
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := twoServices()
+			files["api/services/billing/api.yaml"] = tt.billing
+			files["api/services/identity/api.yaml"] = tt.identity
+			_, _, err := unify(t, files)
+			if err == nil {
+				t.Fatal("unify succeeded, want a conflict error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("error = %v\nwant it to contain %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnifyExcludesPackages(t *testing.T) {
+	files := twoServices()
+	files["api/go-api-gen.yaml"] = unifiedConfig + "  exclude: " +
+		"[../gen/identity]\n"
+
+	_, doc, err := unify(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := mapAt(t, doc, "paths")
+	if _, ok := paths["/users"]; ok {
+		t.Error("an excluded package still contributed its paths")
+	}
+	if _, ok := paths["/invoices"]; !ok {
+		t.Error("the included package lost its paths")
+	}
+}
+
+func TestUnifyRejectsUnknownExclude(t *testing.T) {
+	files := twoServices()
+	files["api/go-api-gen.yaml"] = unifiedConfig + "  exclude: [../gen/nope]\n"
+
+	_, _, err := unify(t, files)
+	if err == nil {
+		t.Fatal("config loaded, want an error for an exclude matching no " +
+			"package")
+	}
+	if !strings.Contains(err.Error(), "does not match any package output") {
+		t.Errorf("error = %v, want guidance about the unmatched exclude", err)
+	}
+}
+
+func TestUnifyIsDeterministic(t *testing.T) {
+	files := twoServices()
+	a, _, err := unify(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _, err := unify(t, twoServices())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a != b {
+		t.Error("two unified documents from the same input differ")
+	}
+}
+
+// mapAt walks nested keys, checking each assertion, so a shape mismatch
+// reports which key was wrong instead of panicking mid-chain.
+func mapAt(t *testing.T, m map[string]any, keys ...string) map[string]any {
+	t.Helper()
+	cur, path := m, ""
+	for _, k := range keys {
+		path += "/" + k
+		v, ok := cur[k]
+		if !ok {
+			t.Fatalf("key %s is missing", path)
+		}
+		next, ok := v.(map[string]any)
+		if !ok {
+			t.Fatalf("%s is %T, want a mapping", path, v)
+		}
+		cur = next
+	}
+	return cur
+}
+
+func mapOf(t *testing.T, v any, path string) map[string]any {
+	t.Helper()
+	m, ok := v.(map[string]any)
+	if !ok {
+		t.Fatalf("%s is %T, want a mapping", path, v)
+	}
+	return m
+}
+
+func sliceAt(t *testing.T, m map[string]any, key string) []any {
+	t.Helper()
+	v, ok := m[key]
+	if !ok {
+		t.Fatalf("key %q is missing", key)
+	}
+	s, ok := v.([]any)
+	if !ok {
+		t.Fatalf("%q is %T, want a sequence", key, v)
+	}
+	return s
+}
+
+// opTags reads the tags of one operation, which is otherwise a chain of type
+// assertions at every call site.
+func opTags(t *testing.T, paths map[string]any, path, method string) []any {
+	t.Helper()
+	return sliceAt(t, mapAt(t, paths, path, method), "tags")
+}

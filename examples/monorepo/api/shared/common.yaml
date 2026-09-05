@@ -1,0 +1,29 @@
+components:
+  schemas:
+    Money:
+      type: object
+      required: [amount_minor, currency]
+      properties:
+        amount_minor: { type: integer, format: int64 }
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+
+    PageInfo:
+      type: object
+      required: [total]
+      properties:
+        total: { type: integer }
+        next_cursor: { type: string }
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque pagination cursor from a previous response.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }

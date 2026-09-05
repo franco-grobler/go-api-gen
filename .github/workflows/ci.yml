@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes an in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so a linter release cannot turn a green branch red on its own.
+  GOLANGCI_VERSION: v2.13.2
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            runtime/go.sum
+            examples/monorepo/go.sum
+
+      - name: Build
+        run: |
+          go build ./...
+          (cd runtime && go build ./...)
+
+      - name: Vet
+        run: |
+          go vet ./...
+          (cd runtime && go vet ./...)
+
+      # -shuffle catches tests that depend on execution order; -race catches
+      # data races in the generator's caches.
+      - name: Test
+        run: |
+          go test -race -shuffle=on -covermode=atomic \
+            -coverprofile=coverage.out ./...
+          (cd runtime && go test -race -shuffle=on ./...)
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            runtime/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_VERSION }}
+
+      - name: golangci-lint (runtime module)
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_VERSION }}
+          working-directory: runtime
+          args: --config=${{ github.workspace }}/.golangci.yml
+
+  tidy:
+    name: Modules are tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # GOWORK=off so each module is tidied against its own requirements
+      # rather than the workspace's resolved set.
+      - name: go mod tidy
+        run: |
+          GOWORK=off go mod tidy
+          (cd runtime && GOWORK=off go mod tidy)
+
+      - name: Check for changes
+        run: |
+          changed=$(git status --porcelain -- '*go.mod' '*go.sum')
+          if [ -n "$changed" ]; then
+            echo "$changed"
+            echo "::error::Modules are not tidy. Run 'make tidy' and commit."
+            exit 1
+          fi
+
+  generated:
+    name: Generated code is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            examples/monorepo/go.sum
+
+      # The generator is deterministic, so regenerating must be a no-op. This
+      # is what stops a spec change landing without its generated code.
+      - name: Regenerate
+        run: |
+          go run ./cmd/go-api-gen build -c examples/monorepo/api/go-api-gen.yaml
+          go run ./cmd/go-api-gen unify -c examples/monorepo/api/go-api-gen.yaml
+
+      # git status, not git diff: diff only inspects tracked files, so a
+      # generated file that was never committed would otherwise slip through.
+      - name: Check for drift
+        run: |
+          changed=$(git status --porcelain -- examples/monorepo)
+          if [ -n "$changed" ]; then
+            echo "$changed"
+            echo "::error::Generated output is stale or uncommitted."
+            echo "Run 'make generate' and commit the result."
+            exit 1
+          fi
+
+      # The drift gate only proves the bytes match. Generated Go also has to
+      # compile: output that parses but does not build would pass every other
+      # check here.
+      - name: Compile the generated example
+        run: cd examples/monorepo && go build ./... && go vet ./...
