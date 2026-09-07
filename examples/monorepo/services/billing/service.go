@@ -19,12 +19,6 @@ import (
 	"github.com/franco-grobler/go-api-gen/runtime/optional"
 )
 
-// ErrorTypeBaseURL is prefixed to an error slug to form the RFC 9457 "type"
-// URI. It matches errors.type_base_url in go-api-gen.yaml, which describes the
-// same value to a reader of the documentation but does not yet reach generated
-// code, so a binary passes it at construction.
-const ErrorTypeBaseURL = "https://errors.acme.io/"
-
 // defaultLimit is the page size for a client that did not ask for one. The
 // spec declares the same default on the limit parameter; the generated code
 // enforces the 1..100 range but does not substitute a missing value, so the
@@ -59,11 +53,12 @@ func New(payers ...apitypes.User) *Service {
 
 // NewServer returns the billing service as an http.Handler: the generated
 // routing, decoding and validation in front, Service behind.
+//
+// It exists because internal/api is internal to this service, so no main
+// package can reach it. The errors block of go-api-gen.yaml needs no repeating
+// here; the generated NewServer has already applied it.
 func NewServer(s *Service, opts ...api.ServerOption) http.Handler {
-	base := []api.ServerOption{
-		api.WithErrorOptions(apierr.Options{TypeBaseURL: ErrorTypeBaseURL}),
-	}
-	return api.NewServer(s, append(base, opts...)...)
+	return api.NewServer(s, opts...)
 }
 
 // Invoices returns every invoice created so far, oldest first.

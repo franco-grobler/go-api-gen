@@ -15,6 +15,11 @@ type Options struct {
 	// unset, the slug is emitted bare, which is still a valid type value.
 	TypeBaseURL string
 
+	// ValidationTitle replaces the title of a validation failure, whether the
+	// generated code raised it or a handler did. With it unset,
+	// DefaultValidationTitle stands.
+	ValidationTitle string
+
 	// TraceID extracts a correlation id from the request. When it returns "",
 	// no trace_id member is emitted.
 	TraceID func(*http.Request) string
@@ -122,6 +127,12 @@ func write(w http.ResponseWriter, r *http.Request, p *Problem, opts *Options) {
 	}
 	if p.TraceID == "" && opts.TraceID != nil {
 		p.TraceID = opts.TraceID(r)
+	}
+	// Before the slug becomes a URI, while it is still comparable to
+	// SlugValidation. A title the caller chose deliberately is not replaced.
+	if opts.ValidationTitle != "" && p.Type == SlugValidation &&
+		p.Title == DefaultValidationTitle {
+		p.Title = opts.ValidationTitle
 	}
 	p.Type = resolveType(p.Type, opts.TypeBaseURL)
 

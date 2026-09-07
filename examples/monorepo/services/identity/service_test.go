@@ -11,6 +11,7 @@ import (
 
 	"github.com/acme/monorepo/gen/apitypes"
 	"github.com/acme/monorepo/services/identity"
+	"github.com/acme/monorepo/services/identity/internal/api"
 )
 
 const userID = "22222222-2222-2222-2222-222222222222"
@@ -84,7 +85,7 @@ func TestUnknownUserIsNotFound(t *testing.T) {
 	if status != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404: %v", status, body)
 	}
-	want := identity.ErrorTypeBaseURL + "not_found"
+	want := api.DefaultErrorOptions().TypeBaseURL + "not_found"
 	if body["type"] != want {
 		t.Errorf("type = %v, want %q", body["type"], want)
 	}

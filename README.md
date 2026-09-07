@@ -140,6 +140,7 @@ unified:
 | `generate` | The default target list. A service may override it with its own `generate`. |
 | `types` | Go type overrides, keyed `format:<name>` for an OpenAPI format or by schema name for a single component. |
 | `errors.type_base_url` | Prefixed to an error slug to form the RFC 9457 `type` URI. |
+| `errors.validation_title` | Replaces the title of a validation failure. |
 | `unified.*` | The platform-wide document — see below. |
 
 Shared roots and services are keyed by name rather than listed, and the name is
@@ -214,11 +215,20 @@ type Handler interface {
 	CreateInvoice(ctx context.Context, req CreateInvoiceRequest) (*Invoice, error)
 }
 
+srv := api.NewServer(myHandler, api.WithMiddleware(auth, logging))
+```
+
+The `errors` block of the config is already applied — `NewServer` seeds itself
+with it. To set something the config cannot state, start from that value
+rather than a fresh `apierr.Options`, since `WithErrorOptions` replaces the
+whole struct:
+
+```go
+opts := api.DefaultErrorOptions()   // type_base_url, validation_title
+opts.TraceID = tracing.FromRequest
+
 srv := api.NewServer(myHandler,
-	api.WithErrorOptions(apierr.Options{
-		TypeBaseURL: "https://errors.acme.io/",
-		TraceID:     tracing.FromRequest,
-	}),
+	api.WithErrorOptions(opts),
 	api.WithMiddleware(auth, logging),
 )
 ```
@@ -337,8 +347,6 @@ Under construction. Working today:
 - [x] Named `shared`/`services` config, with targets implying their
       prerequisites
 - [ ] Selecting one service on the command line: `go-api-gen build billing`
-- [ ] `errors.*` reaching generated code; a binary passes `apierr.Options`
-      itself today
 - [ ] Typed client
 - [ ] Test fakes
 

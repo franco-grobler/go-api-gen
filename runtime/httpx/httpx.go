@@ -50,6 +50,12 @@ func Resolve(opts ...Option) Config {
 //
 // The error middleware goes innermost, so a problem raised while decoding a
 // request is rendered before any caller-supplied middleware sees the response.
+//
+// The config is taken by value: Wrap runs once, when a server is built, so a
+// pointer would save nothing and would let a caller mutate the configuration
+// out from under a running server.
+//
+//nolint:gocritic // hugeParam: taking Config by value is deliberate, above.
 func Wrap(router http.Handler, c Config) http.Handler {
 	handler := apierr.Middleware(c.Errors)(router)
 	for i := len(c.Middleware) - 1; i >= 0; i-- {

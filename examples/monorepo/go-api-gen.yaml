@@ -24,6 +24,7 @@ types:
 
 errors:
   type_base_url: https://errors.acme.io/
+  validation_title: Invalid request
 
 # The platform-wide document, stitched from every service above.
 unified:

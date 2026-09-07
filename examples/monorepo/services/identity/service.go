@@ -16,10 +16,6 @@ import (
 	"github.com/franco-grobler/go-api-gen/runtime/apierr"
 )
 
-// ErrorTypeBaseURL is prefixed to an error slug to form the RFC 9457 "type"
-// URI, and matches errors.type_base_url in go-api-gen.yaml.
-const ErrorTypeBaseURL = "https://errors.acme.io/"
-
 // Service is the identity service's implementation of the generated handler
 // interface.
 type Service struct {
@@ -38,12 +34,10 @@ func New(users ...apitypes.User) *Service {
 	return s
 }
 
-// NewServer returns the identity service as an http.Handler.
+// NewServer returns the identity service as an http.Handler. The errors block
+// of go-api-gen.yaml is applied by the generated NewServer.
 func NewServer(s *Service, opts ...api.ServerOption) http.Handler {
-	base := []api.ServerOption{
-		api.WithErrorOptions(apierr.Options{TypeBaseURL: ErrorTypeBaseURL}),
-	}
-	return api.NewServer(s, append(base, opts...)...)
+	return api.NewServer(s, opts...)
 }
 
 // GetUser returns one user.

@@ -28,9 +28,14 @@ func New(status int, slug, title string) *Problem {
 	return &Problem{Type: slug, Title: title, Status: status}
 }
 
+// DefaultValidationTitle is the title Validation gives a problem, and the one
+// Options.ValidationTitle replaces. A title set to anything else is the
+// caller's own and is left alone.
+const DefaultValidationTitle = "Request validation failed"
+
 // Validation returns an empty validation problem, ready for Field and Fail.
 func Validation() *Problem {
-	return New(ValidationStatus, SlugValidation, "Request validation failed")
+	return New(ValidationStatus, SlugValidation, DefaultValidationTitle)
 }
 
 // FromValidator returns a validation problem carrying the accumulated

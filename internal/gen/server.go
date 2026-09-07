@@ -224,19 +224,26 @@ func (e *serverEmitter) router(ops []*operation) {
 	e.file.P("\tWithErrorOptions = %s.WithErrorOptions", e.httpxPkg)
 	e.file.P(")\n")
 
+	e.errorOptions()
+
 	e.file.Comment("NewServer returns an http.Handler serving every " +
 		"operation in the specification.")
 	e.file.P("func NewServer(h Handler, opts ...ServerOption) %s.Handler {",
 		e.httpPkg)
 	e.file.P("\tmux := %s.NewServeMux()", e.httpPkg)
 	e.file.P("\tregister(mux, h)")
-	e.file.P("\treturn %s.Wrap(mux, %s.Resolve(opts...))",
+	e.file.P("\tall := append(")
+	e.file.P("\t\t[]ServerOption{WithErrorOptions(DefaultErrorOptions())},")
+	e.file.P("\t\topts...,")
+	e.file.P("\t)")
+	e.file.P("\treturn %s.Wrap(mux, %s.Resolve(all...))",
 		e.httpxPkg, e.httpxPkg)
 	e.file.P("}\n")
 
 	e.file.Comment("Register adds every route to an existing mux, for a " +
 		"service that owns its own router. The caller is then responsible " +
-		"for installing apierr.Middleware.")
+		"for installing apierr.Middleware, which DefaultErrorOptions " +
+		"configures.")
 	e.file.P("func Register(mux *%s.ServeMux, h Handler) {", e.httpPkg)
 	e.file.P("\tregister(mux, h)")
 	e.file.P("}\n")
@@ -251,6 +258,37 @@ func (e *serverEmitter) router(ops []*operation) {
 
 // handler renders the decode, validate, dispatch, encode sequence for one
 // operation.
+// errorOptions renders the errors block of the workspace configuration as a
+// value the server seeds itself with.
+//
+// Without this the settings would be parsed, validated, and then ignored,
+// leaving every binary to repeat a base URL the configuration already states.
+func (e *serverEmitter) errorOptions() {
+	cfg := e.ws.Config.Errors
+
+	e.file.Comment("DefaultErrorOptions returns the errors block of the " +
+		"workspace configuration. NewServer applies it before any option the " +
+		"caller passes.")
+	e.file.Comment("")
+	e.file.Comment("A caller that needs to set something the configuration " +
+		"cannot state, such as a TraceID extractor, should start from this " +
+		"value: WithErrorOptions replaces the whole struct rather than " +
+		"merging into it.")
+	e.file.P("func DefaultErrorOptions() %s.Options {", e.apierrPkg)
+	e.file.P("\treturn %s.Options{", e.apierrPkg)
+	if cfg.TypeBaseURL != "" {
+		e.file.P("\t\tTypeBaseURL: %s,", strconv.Quote(cfg.TypeBaseURL))
+	}
+	if cfg.ValidationTitle != "" {
+		e.file.P(
+			"\t\tValidationTitle: %s,",
+			strconv.Quote(cfg.ValidationTitle),
+		)
+	}
+	e.file.P("\t}")
+	e.file.P("}\n")
+}
+
 func (e *serverEmitter) handler(o *operation) error {
 	path := o.op.Params("path")
 	query := o.op.Params("query")

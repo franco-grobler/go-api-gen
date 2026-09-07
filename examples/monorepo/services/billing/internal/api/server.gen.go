@@ -75,17 +75,34 @@ var (
 	WithErrorOptions = httpx.WithErrorOptions
 )
 
+// DefaultErrorOptions returns the errors block of the workspace
+// configuration. NewServer applies it before any option the caller passes.
+//
+// A caller that needs to set something the configuration cannot state, such
+// as a TraceID extractor, should start from this value: WithErrorOptions
+// replaces the whole struct rather than merging into it.
+func DefaultErrorOptions() apierr.Options {
+	return apierr.Options{
+		TypeBaseURL:     "https://errors.acme.io/",
+		ValidationTitle: "Invalid request",
+	}
+}
+
 // NewServer returns an http.Handler serving every operation in the
 // specification.
 func NewServer(h Handler, opts ...ServerOption) http.Handler {
 	mux := http.NewServeMux()
 	register(mux, h)
-	return httpx.Wrap(mux, httpx.Resolve(opts...))
+	all := append(
+		[]ServerOption{WithErrorOptions(DefaultErrorOptions())},
+		opts...,
+	)
+	return httpx.Wrap(mux, httpx.Resolve(all...))
 }
 
 // Register adds every route to an existing mux, for a service that owns its
 // own router. The caller is then responsible for installing
-// apierr.Middleware.
+// apierr.Middleware, which DefaultErrorOptions configures.
 func Register(mux *http.ServeMux, h Handler) {
 	register(mux, h)
 }

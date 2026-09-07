@@ -354,3 +354,77 @@ paths:
 func normalize(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
+
+// The errors block is parsed and validated by config; this is the check that
+// it also arrives somewhere, rather than being a setting every binary has to
+// repeat by hand.
+func TestErrorsConfigReachesTheServer(t *testing.T) {
+	files := oneService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /x:
+    get:
+      operationId: x
+      responses:
+        "200": { description: ok }
+`)
+	files["go-api-gen.yaml"] = "version: 1\n" +
+		"errors:\n" +
+		"  type_base_url: https://errors.acme.io/\n" +
+		"  validation_title: Invalid request\n" +
+		"services:\n" +
+		"  api:\n" +
+		"    spec: api.yaml\n" +
+		"    to: gen/api\n" +
+		"    generate: [types, server]\n"
+
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := normalize(out["gen/api/server.gen.go"])
+
+	for _, want := range []string{
+		`TypeBaseURL: "https://errors.acme.io/"`,
+		`ValidationTitle: "Invalid request"`,
+		"WithErrorOptions(DefaultErrorOptions())",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("server should contain %q:\n%s", want, src)
+		}
+	}
+}
+
+// With nothing configured the accessor is still emitted, so a caller always
+// has one place to start from, and it carries no settings of its own.
+func TestErrorsConfigDefaultsToEmptyOptions(t *testing.T) {
+	files := oneService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /x:
+    get:
+      operationId: x
+      responses:
+        "200": { description: ok }
+`)
+	files["go-api-gen.yaml"] = "version: 1\n" +
+		"services:\n" +
+		"  api:\n" +
+		"    spec: api.yaml\n" +
+		"    to: gen/api\n" +
+		"    generate: [types, server]\n"
+
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := normalize(out["gen/api/server.gen.go"])
+	if !strings.Contains(src, "func DefaultErrorOptions() apierr.Options {") {
+		t.Errorf("DefaultErrorOptions should always be emitted:\n%s", src)
+	}
+	if strings.Contains(src, "TypeBaseURL") {
+		t.Errorf("nothing was configured, so nothing should be set:\n%s", src)
+	}
+}

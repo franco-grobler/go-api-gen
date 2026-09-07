@@ -314,3 +314,53 @@ func TestFromValidatorReturnsNilWhenClean(t *testing.T) {
 		t.Errorf("FromValidator(nil) = %v, want nil", p)
 	}
 }
+
+// ValidationTitle is how a workspace renames validation failures without
+// every call site passing a title. It applies wherever the problem came from.
+func TestValidationTitleOverride(t *testing.T) {
+	opts := Options{ValidationTitle: "Invalid request"}
+
+	// Raised by the generated code, through the validator.
+	v := validate.New()
+	v.Field("email").Fail("missing", "Field required")
+	res := serve(t, opts, func(w http.ResponseWriter, r *http.Request) {
+		Fail(r, FromValidator(v))
+	})
+	if got := decode(t, res)["title"]; got != "Invalid request" {
+		t.Errorf("title = %v, want the override", got)
+	}
+
+	// Raised by a handler, through the builder.
+	res = serve(t, opts, func(w http.ResponseWriter, r *http.Request) {
+		Fail(r, Validation().Field("body", "email").
+			Fail("email_taken", "already registered"))
+	})
+	if got := decode(t, res)["title"]; got != "Invalid request" {
+		t.Errorf("handler-raised title = %v, want the override", got)
+	}
+}
+
+// A title the caller chose is theirs. The override replaces the default, not
+// whatever happens to be there.
+func TestValidationTitleLeavesADeliberateTitleAlone(t *testing.T) {
+	res := serve(t, Options{ValidationTitle: "Invalid request"},
+		func(w http.ResponseWriter, r *http.Request) {
+			p := Validation()
+			p.Title = "Payment details rejected"
+			Fail(r, p.Field("body", "card").Fail("declined", "declined"))
+		})
+	if got := decode(t, res)["title"]; got != "Payment details rejected" {
+		t.Errorf("title = %v, want the caller's own", got)
+	}
+}
+
+// Only validation problems are renamed; a 404 keeps its own title.
+func TestValidationTitleDoesNotTouchOtherProblems(t *testing.T) {
+	res := serve(t, Options{ValidationTitle: "Invalid request"},
+		func(w http.ResponseWriter, r *http.Request) {
+			Fail(r, NotFound("user", 7))
+		})
+	if got := decode(t, res)["title"]; got != "Not found" {
+		t.Errorf("title = %v, want the 404's own title", got)
+	}
+}

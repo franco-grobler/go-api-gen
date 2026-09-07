@@ -12,6 +12,7 @@ import (
 
 	"github.com/acme/monorepo/gen/apitypes"
 	"github.com/acme/monorepo/services/billing"
+	"github.com/acme/monorepo/services/billing/internal/api"
 )
 
 const payerID = "22222222-2222-2222-2222-222222222222"
@@ -190,14 +191,21 @@ func TestHandlerRaisedErrorMatchesSchemaShape(t *testing.T) {
 	}
 }
 
-// NewServer passes ErrorTypeBaseURL through to the middleware, so the problem
-// type is a resolvable URI rather than a bare slug.
-func TestProblemTypeCarriesTheBaseURL(t *testing.T) {
+// The errors block of go-api-gen.yaml reaches the response without any binary
+// repeating it: the generated NewServer seeds itself with DefaultErrorOptions,
+// so the type is a resolvable URI rather than a bare slug and the title is the
+// configured one.
+func TestConfiguredErrorOptionsReachTheResponse(t *testing.T) {
 	_, srv := serve(t)
 	_, body := post(t, srv, `{}`)
-	want := billing.ErrorTypeBaseURL + "validation_failed"
+
+	want := api.DefaultErrorOptions().TypeBaseURL + "validation_failed"
 	if body["type"] != want {
 		t.Errorf("type = %v, want %q", body["type"], want)
+	}
+	if body["title"] != api.DefaultErrorOptions().ValidationTitle {
+		t.Errorf("title = %v, want the configured validation_title",
+			body["title"])
 	}
 }
 
