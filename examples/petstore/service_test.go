@@ -127,9 +127,9 @@ func TestClientCannotChooseTheID(t *testing.T) {
 // Constraints in the spec are enforced before the handler runs, and reported
 // in the RFC 9457 envelope with the configured type base URL.
 //
-// An omitted required string trips its own minLength as well, because the
-// value validation sees is the zero value: two entries for one field, both
-// true, and worth knowing about before a form binds to them.
+// A field the client never sent is reported once, as missing. Its other
+// constraints are not measured against the zero value, so a form binding to
+// these errors shows one complaint per input.
 func TestSchemaViolations(t *testing.T) {
 	tests := []struct {
 		name, body string
@@ -137,10 +137,7 @@ func TestSchemaViolations(t *testing.T) {
 	}{{
 		name: "missing required name",
 		body: `{"tag": "dog"}`,
-		want: []string{
-			"missing at body/name",
-			"string_too_short at body/name",
-		},
+		want: []string{"missing at body/name"},
 	}, {
 		name: "name too short",
 		body: `{"name": ""}`,

@@ -184,13 +184,10 @@ func (e *validateEmitter) schemaBody(s *spec.Schema, expr, v string) string {
 	return b.String()
 }
 
+// hasRequired reports whether the struct carries a missingFields slice, which
+// it does exactly when requiredNames found something to track.
 func hasRequired(s *spec.Schema) bool {
-	for _, p := range s.Properties {
-		if p.Required {
-			return true
-		}
-	}
-	return false
+	return len(requiredNames(s)) > 0
 }
 
 func (e *validateEmitter) embeddedName(s *spec.Schema) string {
@@ -216,7 +213,15 @@ func (e *validateEmitter) property(b *strings.Builder, p *spec.Property,
 		fmt.Fprintf(b, "\t}\n")
 		return
 	}
-	e.value(b, p.Schema, field, loc, "\t")
+
+	// A required field the client never sent has already been reported as
+	// missing. Checking it anyway would measure the zero value and report the
+	// same field again -- as too short, or below a minimum -- for a value that
+	// does not exist.
+	fmt.Fprintf(b, "\tif !%s.Absent(%s.missingFields, %q) {\n",
+		e.validatePkg, owner, p.Name)
+	e.value(b, p.Schema, field, loc, "\t\t")
+	fmt.Fprintf(b, "\t}\n")
 }
 
 // value renders the checks for one value at a location.

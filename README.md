@@ -249,7 +249,9 @@ func (money Money) Validate(v *validate.V) {
 
 Required fields get a generated `UnmarshalJSON` that records which keys the
 client actually sent, so an omitted field is reported as missing while a
-deliberate `0` or `""` is not.
+deliberate `0` or `""` is not. A field that was never sent is reported once:
+its other constraints are skipped rather than measured against the zero value,
+so one absent input does not produce one error per keyword.
 
 ### Custom rules
 

@@ -2,9 +2,11 @@ package billing_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -110,32 +112,43 @@ func TestSchemaViolationsAreReportedTogether(t *testing.T) {
 }
 
 // A required field the client omitted must be reported as missing, not
-// silently accepted as the zero value.
-func TestMissingRequiredFieldIsReported(t *testing.T) {
+// silently accepted as the zero value -- and reported once.
+//
+// total is a required object, so before the emitter learned to skip an absent
+// field's other checks this also descended into a zero Money and complained
+// that its currency was too short, for an object nobody sent.
+func TestMissingRequiredFieldIsReportedOnce(t *testing.T) {
 	_, srv := serve(t)
 	status, body := post(t, srv, `{}`)
 	if status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422: %v", status, body)
 	}
 
-	var missing []string
-	errs, _ := body["errors"].([]any)
-	for _, raw := range errs {
+	want := []string{"missing at body/payer_id", "missing at body/total"}
+	got := failures(t, body)
+	sort.Strings(got)
+	if strings.Join(got, ", ") != strings.Join(want, ", ") {
+		t.Errorf("errors = %v, want %v", got, want)
+	}
+}
+
+// failures renders the errors array as "slug at a/b" strings, so a mismatch
+// reports what actually came back rather than a length.
+func failures(t *testing.T, body map[string]any) []string {
+	t.Helper()
+	entries, _ := body["errors"].([]any)
+	out := make([]string, 0, len(entries))
+	for _, raw := range entries {
 		e, _ := raw.(map[string]any)
-		if e["type"] != "missing" {
-			continue
-		}
 		loc, _ := e["loc"].([]any)
-		missing = append(missing, loc[len(loc)-1].(string))
+		parts := make([]string, len(loc))
+		for i, seg := range loc {
+			parts[i] = fmt.Sprint(seg)
+		}
+		out = append(out, fmt.Sprintf("%v at %s",
+			e["type"], strings.Join(parts, "/")))
 	}
-	want := map[string]bool{"payer_id": true, "total": true}
-	for _, name := range missing {
-		delete(want, name)
-	}
-	if len(want) > 0 {
-		t.Errorf("missing fields reported = %v, did not report %v",
-			missing, want)
-	}
+	return out
 }
 
 // A zero value the client actually sent is not "missing".

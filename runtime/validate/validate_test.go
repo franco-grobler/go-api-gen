@@ -86,3 +86,23 @@ func TestLocIsACopy(t *testing.T) {
 		t.Errorf("loc = %s; Loc() must return a copy", got)
 	}
 }
+
+// Absent is how generated validation decides to skip a field's other checks.
+func TestAbsent(t *testing.T) {
+	missing := []string{"name", "total"}
+
+	for _, name := range []string{"name", "total"} {
+		if !Absent(missing, name) {
+			t.Errorf("Absent(%v, %q) = false, want true", missing, name)
+		}
+	}
+	for _, name := range []string{"tag", "", "nam"} {
+		if Absent(missing, name) {
+			t.Errorf("Absent(%v, %q) = true, want false", missing, name)
+		}
+	}
+	// The common case: nothing was omitted, so nothing is skipped.
+	if Absent(nil, "name") {
+		t.Error("Absent(nil, \"name\") = true, want false")
+	}
+}

@@ -3,6 +3,7 @@ package gen
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -426,5 +427,55 @@ paths:
 	}
 	if strings.Contains(src, "TypeBaseURL") {
 		t.Errorf("nothing was configured, so nothing should be set:\n%s", src)
+	}
+}
+
+// A required field the client never sent is reported as missing and not
+// measured again: its other constraints are skipped, so one absent field
+// produces one error rather than one per keyword.
+func TestAbsentRequiredFieldSkipsItsOtherChecks(t *testing.T) {
+	files := oneService(pathsFor(`    S:
+      type: object
+      required: [name, size]
+      properties:
+        name: { type: string, minLength: 1 }
+        nickname: { type: string, minLength: 1 }
+        size: { $ref: '#/components/schemas/Size' }
+    Size:
+      type: object
+      required: [width]
+      properties:
+        width: { type: integer, minimum: 1 }
+`, "S"))
+	files["go-api-gen.yaml"] = "version: 1\n" +
+		"services:\n" +
+		"  api:\n" +
+		"    spec: api.yaml\n" +
+		"    to: gen/api\n" +
+		"    generate: [types, validate]\n"
+
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := normalize(out["gen/api/validate.gen.go"])
+
+	guard := func(field string) string {
+		return "if !validate.Absent(s.missingFields, " + strconv.Quote(field) +
+			") {"
+	}
+	// A required scalar guards its own keywords.
+	if !strings.Contains(src, guard("name")) {
+		t.Errorf("a required field's checks should be guarded:\n%s", src)
+	}
+	// A required object guards the recursion too, or an absent one would be
+	// walked as a zero value and report its own contents as invalid.
+	if !strings.Contains(src, guard("size")) {
+		t.Errorf("a required object's Validate call should be guarded:\n%s",
+			src)
+	}
+	// An optional field is already guarded by its Optional[T].
+	if strings.Contains(src, guard("nickname")) {
+		t.Errorf("an optional field needs no missing guard:\n%s", src)
 	}
 }

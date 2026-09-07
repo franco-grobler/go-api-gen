@@ -21,11 +21,13 @@ func (pet Pet) Validate(v *validate.V) {
 	for _, name := range pet.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	if utf8.RuneCountInString(string(pet.Name)) < 1 {
-		v.Field("name").Fail("string_too_short", "String should have at least 1 character", "min_length", 1)
-	}
-	if utf8.RuneCountInString(string(pet.Name)) > 64 {
-		v.Field("name").Fail("string_too_long", "String should have at most 64 characters", "max_length", 64)
+	if !validate.Absent(pet.missingFields, "name") {
+		if utf8.RuneCountInString(string(pet.Name)) < 1 {
+			v.Field("name").Fail("string_too_short", "String should have at least 1 character", "min_length", 1)
+		}
+		if utf8.RuneCountInString(string(pet.Name)) > 64 {
+			v.Field("name").Fail("string_too_long", "String should have at most 64 characters", "max_length", 64)
+		}
 	}
 	if val, ok := pet.Tag.Get(); ok {
 		if utf8.RuneCountInString(string(val)) > 64 {
@@ -46,11 +48,13 @@ func (newPet NewPet) Validate(v *validate.V) {
 	for _, name := range newPet.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	if utf8.RuneCountInString(string(newPet.Name)) < 1 {
-		v.Field("name").Fail("string_too_short", "String should have at least 1 character", "min_length", 1)
-	}
-	if utf8.RuneCountInString(string(newPet.Name)) > 64 {
-		v.Field("name").Fail("string_too_long", "String should have at most 64 characters", "max_length", 64)
+	if !validate.Absent(newPet.missingFields, "name") {
+		if utf8.RuneCountInString(string(newPet.Name)) < 1 {
+			v.Field("name").Fail("string_too_short", "String should have at least 1 character", "min_length", 1)
+		}
+		if utf8.RuneCountInString(string(newPet.Name)) > 64 {
+			v.Field("name").Fail("string_too_long", "String should have at most 64 characters", "max_length", 64)
+		}
 	}
 	if val, ok := newPet.Tag.Get(); ok {
 		if utf8.RuneCountInString(string(val)) > 64 {

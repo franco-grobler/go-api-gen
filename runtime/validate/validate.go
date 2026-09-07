@@ -112,6 +112,22 @@ type Validator interface {
 	Validate(v *V)
 }
 
+// Absent reports whether name is one of the required properties the client
+// omitted.
+//
+// Generated validation calls this to skip a property's other checks. A field
+// nobody sent is reported as missing; reporting it as too short as well would
+// describe a value that does not exist, and a form binding to the errors would
+// show two complaints under one input.
+func Absent(missing []string, name string) bool {
+	for _, m := range missing {
+		if m == name {
+			return true
+		}
+	}
+	return false
+}
+
 // OneOfString reports whether v is one of the allowed values. Generated code
 // uses it for an inline enum; a named enum type gets its own Valid method.
 func OneOfString(v string, allowed ...string) bool {

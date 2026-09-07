@@ -14,11 +14,13 @@ func (money Money) Validate(v *validate.V) {
 	for _, name := range money.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	if utf8.RuneCountInString(string(money.Currency)) < 3 {
-		v.Field("currency").Fail("string_too_short", "String should have at least 3 characters", "min_length", 3)
-	}
-	if utf8.RuneCountInString(string(money.Currency)) > 3 {
-		v.Field("currency").Fail("string_too_long", "String should have at most 3 characters", "max_length", 3)
+	if !validate.Absent(money.missingFields, "currency") {
+		if utf8.RuneCountInString(string(money.Currency)) < 3 {
+			v.Field("currency").Fail("string_too_short", "String should have at least 3 characters", "min_length", 3)
+		}
+		if utf8.RuneCountInString(string(money.Currency)) > 3 {
+			v.Field("currency").Fail("string_too_long", "String should have at most 3 characters", "max_length", 3)
+		}
 	}
 }
 
@@ -43,13 +45,17 @@ func (user User) Validate(v *validate.V) {
 	for _, name := range user.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	if utf8.RuneCountInString(string(user.Email)) < 3 {
-		v.Field("email").Fail("string_too_short", "String should have at least 3 characters", "min_length", 3)
+	if !validate.Absent(user.missingFields, "email") {
+		if utf8.RuneCountInString(string(user.Email)) < 3 {
+			v.Field("email").Fail("string_too_short", "String should have at least 3 characters", "min_length", 3)
+		}
+		if utf8.RuneCountInString(string(user.Email)) > 254 {
+			v.Field("email").Fail("string_too_long", "String should have at most 254 characters", "max_length", 254)
+		}
 	}
-	if utf8.RuneCountInString(string(user.Email)) > 254 {
-		v.Field("email").Fail("string_too_long", "String should have at most 254 characters", "max_length", 254)
+	if !validate.Absent(user.missingFields, "status") {
+		user.Status.Validate(v.Field("status"))
 	}
-	user.Status.Validate(v.Field("status"))
 	if val, ok := user.Address.Get(); ok {
 		val.Validate(v.Field("address"))
 	}
@@ -68,11 +74,13 @@ func (address Address) Validate(v *validate.V) {
 	for _, name := range address.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	if utf8.RuneCountInString(string(address.Country)) < 2 {
-		v.Field("country").Fail("string_too_short", "String should have at least 2 characters", "min_length", 2)
-	}
-	if utf8.RuneCountInString(string(address.Country)) > 2 {
-		v.Field("country").Fail("string_too_long", "String should have at most 2 characters", "max_length", 2)
+	if !validate.Absent(address.missingFields, "country") {
+		if utf8.RuneCountInString(string(address.Country)) < 2 {
+			v.Field("country").Fail("string_too_short", "String should have at least 2 characters", "min_length", 2)
+		}
+		if utf8.RuneCountInString(string(address.Country)) > 2 {
+			v.Field("country").Fail("string_too_long", "String should have at most 2 characters", "max_length", 2)
+		}
 	}
 }
 

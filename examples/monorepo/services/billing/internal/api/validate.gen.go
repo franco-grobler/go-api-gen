@@ -14,10 +14,16 @@ func (invoice Invoice) Validate(v *validate.V) {
 	for _, name := range invoice.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	invoice.Payer.Validate(v.Field("payer"))
-	invoice.Total.Validate(v.Field("total"))
-	if !validate.OneOfString(string(invoice.Status), "draft", "open", "paid", "void") {
-		v.Field("status").Fail("enum", "Input should be one of \"draft\", \"open\", \"paid\", \"void\"")
+	if !validate.Absent(invoice.missingFields, "payer") {
+		invoice.Payer.Validate(v.Field("payer"))
+	}
+	if !validate.Absent(invoice.missingFields, "total") {
+		invoice.Total.Validate(v.Field("total"))
+	}
+	if !validate.Absent(invoice.missingFields, "status") {
+		if !validate.OneOfString(string(invoice.Status), "draft", "open", "paid", "void") {
+			v.Field("status").Fail("enum", "Input should be one of \"draft\", \"open\", \"paid\", \"void\"")
+		}
 	}
 	if val, ok := invoice.Lines.Get(); ok {
 		for i, item := range val {
@@ -32,7 +38,9 @@ func (createInvoice CreateInvoice) Validate(v *validate.V) {
 	for _, name := range createInvoice.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	createInvoice.Total.Validate(v.Field("total"))
+	if !validate.Absent(createInvoice.missingFields, "total") {
+		createInvoice.Total.Validate(v.Field("total"))
+	}
 	if val, ok := createInvoice.Note.Get(); ok {
 		if utf8.RuneCountInString(string(val)) > 500 {
 			v.Field("note").Fail("string_too_long", "String should have at most 500 characters", "max_length", 500)
@@ -46,10 +54,14 @@ func (listInvoicesResponse ListInvoicesResponse) Validate(v *validate.V) {
 	for _, name := range listInvoicesResponse.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	for i, item := range listInvoicesResponse.Items {
-		item.Validate(v.Field("items").Index(i))
+	if !validate.Absent(listInvoicesResponse.missingFields, "items") {
+		for i, item := range listInvoicesResponse.Items {
+			item.Validate(v.Field("items").Index(i))
+		}
 	}
-	listInvoicesResponse.Page.Validate(v.Field("page"))
+	if !validate.Absent(listInvoicesResponse.missingFields, "page") {
+		listInvoicesResponse.Page.Validate(v.Field("page"))
+	}
 }
 
 // Validate checks InvoiceStatus against the constraints in the
@@ -69,8 +81,12 @@ func (invoiceLinesItem InvoiceLinesItem) Validate(v *validate.V) {
 	for _, name := range invoiceLinesItem.missingFields {
 		v.Field(name).Fail("missing", "Field required")
 	}
-	if utf8.RuneCountInString(string(invoiceLinesItem.Description)) < 1 {
-		v.Field("description").Fail("string_too_short", "String should have at least 1 character", "min_length", 1)
+	if !validate.Absent(invoiceLinesItem.missingFields, "description") {
+		if utf8.RuneCountInString(string(invoiceLinesItem.Description)) < 1 {
+			v.Field("description").Fail("string_too_short", "String should have at least 1 character", "min_length", 1)
+		}
 	}
-	invoiceLinesItem.Amount.Validate(v.Field("amount"))
+	if !validate.Absent(invoiceLinesItem.missingFields, "amount") {
+		invoiceLinesItem.Amount.Validate(v.Field("amount"))
+	}
 }
