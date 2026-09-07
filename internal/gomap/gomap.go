@@ -71,7 +71,7 @@ func (m *Mapper) Scalar(s *spec.Schema) (Type, bool) {
 	}
 	if s.Format != "" {
 		if mapping, ok := m.cfg.FormatFor(s.Format); ok {
-			return Type{Expr: mapping.Type, Import: mapping.Import}, true
+			return Type{Expr: mapping.Go, Import: mapping.Import}, true
 		}
 		if t, ok := byFormat[s.Format]; ok {
 			return t, true
@@ -86,5 +86,5 @@ func (m *Mapper) Configured(schemaName string) (Type, bool) {
 	if !ok {
 		return Type{}, false
 	}
-	return Type{Expr: mapping.Type, Import: mapping.Import}, true
+	return Type{Expr: mapping.Go, Import: mapping.Import}, true
 }

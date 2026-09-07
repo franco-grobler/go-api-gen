@@ -23,7 +23,7 @@ type Workspace struct {
 	Loader *spec.Loader
 
 	Roots    []*Root
-	Packages []*Package
+	Services []*Service
 
 	owners  map[*spec.Schema]*Owner
 	goNames map[*spec.Schema]string
@@ -33,6 +33,7 @@ type Workspace struct {
 // generates into exactly one Go package, no matter how many services use it.
 type Root struct {
 	Cfg        *config.SchemaRoot
+	Name       string
 	Files      []string       // absolute paths of the YAML files under the root
 	Schemas    []*spec.Schema // every component declared under the root
 	GoPackage  string
@@ -40,9 +41,10 @@ type Root struct {
 	OutputDir  string
 }
 
-// Package is one service spec and the Go package generated from it.
-type Package struct {
-	Cfg        *config.Package
+// Service is one service spec and the Go package generated from it.
+type Service struct {
+	Cfg        *config.Service
+	Name       string
 	Doc        *spec.Document
 	GoPackage  string
 	ImportPath string
@@ -50,16 +52,16 @@ type Package struct {
 
 	// Reachable is every named schema the operations touch, tree-shaken.
 	Reachable []*spec.Schema
-	// Local is the subset of Reachable this package owns and must generate.
+	// Local is the subset of Reachable this service owns and must generate.
 	Local []*spec.Schema
-	// Imports is the shared roots this package needs, in a stable order.
+	// Imports is the shared roots this service needs, in a stable order.
 	Imports []*Root
 }
 
 // Owner records which Go package generates a schema.
 type Owner struct {
-	Root *Root    // non-nil for a shared schema
-	Pkg  *Package // non-nil for a schema local to one service
+	Root    *Root    // non-nil for a shared schema
+	Service *Service // non-nil for a schema local to one service
 }
 
 // GoPackage is the package name the schema is generated into.
@@ -67,7 +69,7 @@ func (o *Owner) GoPackage() string {
 	if o.Root != nil {
 		return o.Root.GoPackage
 	}
-	return o.Pkg.GoPackage
+	return o.Service.GoPackage
 }
 
 // ImportPath is the import path of the package the schema is generated into.
@@ -75,7 +77,7 @@ func (o *Owner) ImportPath() string {
 	if o.Root != nil {
 		return o.Root.ImportPath
 	}
-	return o.Pkg.ImportPath
+	return o.Service.ImportPath
 }
 
 // Load resolves a configuration into a Workspace.
@@ -91,7 +93,7 @@ func Load(cfg *config.Config) (*Workspace, error) {
 	if err := w.loadRoots(res); err != nil {
 		return nil, err
 	}
-	if err := w.loadPackages(res); err != nil {
+	if err := w.loadServices(res); err != nil {
 		return nil, err
 	}
 	if err := w.assignOwners(); err != nil {
@@ -105,28 +107,28 @@ func Load(cfg *config.Config) (*Workspace, error) {
 }
 
 func (w *Workspace) loadRoots(res *gomod.Resolver) error {
-	for _, rc := range w.Config.Schemas {
-		files, err := yamlFiles(rc.AbsPath)
+	for _, rc := range w.Config.SharedRoots() {
+		files, err := yamlFiles(rc.AbsFrom)
 		if err != nil {
-			return fmt.Errorf("schema root %s: %w", rc.Path, err)
+			return fmt.Errorf("shared root %s: %w", rc.Name, err)
 		}
 		if len(files) == 0 {
 			return fmt.Errorf(
-				"schema root %s: no .yaml or .yml files found",
-				rc.Path,
+				"shared root %s: no .yaml or .yml files found",
+				rc.Name,
 			)
 		}
 
 		r := &Root{
-			Cfg: rc, Files: files,
-			GoPackage: rc.Package, OutputDir: rc.AbsOutput,
+			Cfg: rc, Name: rc.Name, Files: files,
+			GoPackage: rc.Package, OutputDir: rc.AbsTo,
 		}
 		if r.ImportPath, err = importPath(
 			res,
 			rc.Import,
-			rc.AbsOutput,
+			rc.AbsTo,
 		); err != nil {
-			return fmt.Errorf("schema root %s: %w", rc.Path, err)
+			return fmt.Errorf("shared root %s: %w", rc.Name, err)
 		}
 		for _, f := range files {
 			doc, err := w.Loader.Document(f)
@@ -140,21 +142,21 @@ func (w *Workspace) loadRoots(res *gomod.Resolver) error {
 	return nil
 }
 
-func (w *Workspace) loadPackages(res *gomod.Resolver) error {
-	for _, pc := range w.Config.Packages {
+func (w *Workspace) loadServices(res *gomod.Resolver) error {
+	for _, pc := range w.Config.ServiceList() {
 		doc, err := w.Loader.Document(pc.AbsSpec)
 		if err != nil {
 			return err
 		}
-		p := &Package{
-			Cfg: pc, Doc: doc,
-			GoPackage: pc.Package, OutputDir: pc.AbsOutput,
+		p := &Service{
+			Cfg: pc, Name: pc.Name, Doc: doc,
+			GoPackage: pc.Package, OutputDir: pc.AbsTo,
 		}
-		if p.ImportPath, err = importPath(res, "", pc.AbsOutput); err != nil {
-			return fmt.Errorf("package %s: %w", pc.Spec, err)
+		if p.ImportPath, err = importPath(res, "", pc.AbsTo); err != nil {
+			return fmt.Errorf("service %s: %w", pc.Name, err)
 		}
 		p.Reachable = spec.Reachable(doc)
-		w.Packages = append(w.Packages, p)
+		w.Services = append(w.Services, p)
 	}
 	return nil
 }
@@ -183,7 +185,7 @@ func (w *Workspace) assignOwners() error {
 			if prev, dup := fileRoot[f]; dup {
 				return fmt.Errorf("%s is covered by two schema roots, %s and "+
 					"%s; schema roots must not overlap",
-					f, prev.Cfg.Path, r.Cfg.Path)
+					f, prev.Cfg.Name, r.Cfg.Name)
 			}
 			fileRoot[f] = r
 		}
@@ -192,12 +194,12 @@ func (w *Workspace) assignOwners() error {
 		}
 	}
 
-	specPkg := map[string]*Package{}
-	for _, p := range w.Packages {
-		specPkg[p.Cfg.AbsSpec] = p
+	specSvc := map[string]*Service{}
+	for _, p := range w.Services {
+		specSvc[p.Cfg.AbsSpec] = p
 	}
 
-	for _, p := range w.Packages {
+	for _, p := range w.Services {
 		for _, s := range p.Reachable {
 			if _, ok := w.owners[s]; ok {
 				continue
@@ -211,34 +213,35 @@ func (w *Workspace) assignOwners() error {
 				continue
 			}
 			if file == p.Cfg.AbsSpec {
-				w.owners[s] = &Owner{Pkg: p}
+				w.owners[s] = &Owner{Service: p}
 				continue
 			}
-			if other, ok := specPkg[file]; ok {
+			if other, ok := specSvc[file]; ok {
 				return w.leakError(s, other, p)
 			}
 			return fmt.Errorf("%s: schema %q is declared in %s, which is not "+
-				"covered by any schema root or package spec.\n"+
-				"Add a schemas entry whose path contains that file.",
+				"covered by any shared root or service spec.\n"+
+				"Add a shared root whose \"from\" directory contains that "+
+				"file.",
 				s.Loc, s.Loc.ComponentName(), rel(w.Config.Dir, file))
 		}
 	}
 
-	// Ownership is assigned across every package before it is validated: a
-	// schema claimed by the first package processed is still a leak when a
-	// later package reaches it.
-	for _, p := range w.Packages {
+	// Ownership is assigned across every service before it is validated: a
+	// schema claimed by the first service processed is still a leak when a
+	// later service reaches it.
+	for _, p := range w.Services {
 		for _, s := range p.Reachable {
-			if o := w.owners[s]; o.Pkg != nil && o.Pkg != p {
-				return w.leakError(s, o.Pkg, p)
+			if o := w.owners[s]; o.Service != nil && o.Service != p {
+				return w.leakError(s, o.Service, p)
 			}
 		}
 	}
 
 	// Local is the owned subset of Reachable, preserving reachability order.
-	for _, p := range w.Packages {
+	for _, p := range w.Services {
 		for _, s := range p.Reachable {
-			if o := w.owners[s]; o.Pkg == p {
+			if o := w.owners[s]; o.Service == p {
 				p.Local = append(p.Local, s)
 			}
 		}
@@ -249,15 +252,14 @@ func (w *Workspace) assignOwners() error {
 // leakError reports a schema declared in one service's spec being reached by
 // another. Honouring it would mean generating the same type into two packages,
 // which is exactly the duplication this tool exists to prevent.
-func (w *Workspace) leakError(s *spec.Schema, owner, user *Package) error {
-	return fmt.Errorf("%s: schema %q is declared in %s, the spec for package "+
-		"%q, but is referenced by package %q.\n"+
-		"Move it into a shared schema root so both packages can import one Go "+
-		"type.",
+func (w *Workspace) leakError(s *spec.Schema, owner, user *Service) error {
+	return fmt.Errorf("%s: schema %q is declared in %s, the spec for service "+
+		"%q, but is referenced by service %q.\n"+
+		"Move it into a shared root so both services can import one Go type.",
 		s.Loc, s.Loc.ComponentName(), rel(
 			w.Config.Dir,
 			s.Loc.File,
-		), owner.Cfg.Output, user.Cfg.Output)
+		), owner.Cfg.Name, user.Cfg.Name)
 }
 
 // assignNames gives every schema its Go type name and rejects collisions
@@ -282,8 +284,8 @@ func (w *Workspace) assignNames() error {
 		if prev, dup := claimed[key][name]; dup && prev.schema != s {
 			return fmt.Errorf("Go type name %q is claimed twice in package "+
 				"%q:\n  %s\n  %s\n"+
-				"Set x-go-name on one of them, or give the schema root a "+
-				"name_prefix.",
+				"Set x-go-name on one of them, or give the shared root a "+
+				"prefix.",
 				name, o.GoPackage(), prev.schema.Loc, s.Loc)
 		}
 		claimed[key][name] = claim{s, name}
@@ -293,14 +295,14 @@ func (w *Workspace) assignNames() error {
 
 	for _, r := range w.Roots {
 		for _, s := range r.Schemas {
-			if err := assign(s, &Owner{Root: r}, r.Cfg.NamePrefix); err != nil {
+			if err := assign(s, &Owner{Root: r}, r.Cfg.Prefix); err != nil {
 				return err
 			}
 		}
 	}
-	for _, p := range w.Packages {
+	for _, p := range w.Services {
 		for _, s := range p.Local {
-			if err := assign(s, &Owner{Pkg: p}, ""); err != nil {
+			if err := assign(s, &Owner{Service: p}, ""); err != nil {
 				return err
 			}
 		}
@@ -308,9 +310,9 @@ func (w *Workspace) assignNames() error {
 	return nil
 }
 
-// resolveImports records, per package, which shared roots it must import.
+// resolveImports records, per service, which shared roots it must import.
 func (w *Workspace) resolveImports() {
-	for _, p := range w.Packages {
+	for _, p := range w.Services {
 		seen := map[*Root]bool{}
 		for _, s := range p.Reachable {
 			o := w.owners[s]
@@ -330,13 +332,13 @@ func (w *Workspace) GoName(s *spec.Schema) string { return w.goNames[s] }
 
 // Qualify returns how a schema is referred to from within a given package:
 // bare when it is local, package-qualified when it is imported.
-func (w *Workspace) Qualify(s *spec.Schema, from *Package) string {
+func (w *Workspace) Qualify(s *spec.Schema, from *Service) string {
 	name := w.goNames[s]
 	o := w.owners[s]
 	if o == nil || name == "" {
 		return name
 	}
-	if o.Pkg == from {
+	if o.Service == from {
 		return name
 	}
 	return o.GoPackage() + "." + name

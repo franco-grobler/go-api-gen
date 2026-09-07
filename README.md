@@ -9,57 +9,66 @@ self-contained OpenAPI document for docs and gateways.
 
 ## The problem
 
-In a monorepo, `oapi-codegen` gives you a choice between one enormous spec and
-a pile of near-identical ones. Either way, every spec regenerates its own copy
-of the shared types, so `User` in the billing service is a different Go type
-from `User` in identity. `import-mapping` can paper over it, one entry at a
-time, by hand.
+Generate Go from a bundled document and you cannot share a Go type.
+
+Bundling is what a gateway and a docs portal need: `redocly bundle` walks every
+`$ref` and inlines it, so the output depends on no other file. But by the time
+a generator reads that document, the fact that `User` arrived from a shared
+file is gone. Each service gets a private `type User struct`, so billing's
+`User` and identity's `User` are distinct Go types with identical fields, and
+any code that spans both needs a conversion function.
+
+`oapi-codegen` offers two ways around this. Both work; both charge for it.
+
+- **`import-mapping`** generates from the *unbundled* spec, where the external
+  reference is still visible, and maps that document onto a Go import path. The
+  keys are matched against the reference string exactly as written, so
+  `../../pkg/schemas/openapi.yaml` and `../../../../../pkg/schemas/openapi.yaml`
+  are two different keys for the same package. Every relative spelling in the
+  tree needs its own entry, and the two consumers of the spec drift apart:
+  documentation comes from the bundle, code from the source.
+- **`x-go-type`** travels inside the document and survives bundling, so the
+  pipeline keeps its shape. But a shared package generated from its own
+  annotated spec imports itself, which does not compile. The shared types have
+  to be hand-written, and the schema stops being their source of truth.
+
+Both are the same concession: sharing is bolted onto a pipeline whose only
+artefact is a bundle. go-api-gen makes ownership part of the model instead, and
+produces the bundle separately, for the readers that actually need one.
 
 ## The model
 
-Shared components live in a schema root. Service specs are thin and `$ref`
-into it.
+Shared components live in a schema root, owned by no service. Each service's
+spec lives beside the code that serves it and `$ref`s into that root.
 
 ```
-api/
-  go-api-gen.yaml
-  shared/
-    user.yaml                # User, UserStatus, Address
-    common.yaml              # Money, PageInfo, shared parameters
-  services/
-    billing/api.yaml         # paths; $ref ../../shared/user.yaml#/...
-    identity/api.yaml
+go-api-gen.yaml              at the repo root, beside go.mod
+schema/
+  user.yaml                  User, UserStatus, Address
+  common.yaml                Money, PageInfo, shared parameters
+services/
+  billing/
+    api.yaml                 the contract
+    internal/api/            generated from it
+  identity/
+    api.yaml
+    internal/api/
+gen/
+  apitypes/                  the shared schemas, as one Go package
+  openapi.yaml               the unified document
 ```
+
+References are ordinary relative `$ref`s, so the source tree stays legible to
+every other OpenAPI tool — `redocly lint services/billing/api.yaml` reads it
+unchanged:
 
 ```yaml
-# api/go-api-gen.yaml
-version: 1
-
-schemas:
-  - path: shared
-    output: ../gen/apitypes     # one Go package, generated once
-
-formats:
-  uuid: { type: uuid.UUID, import: github.com/google/uuid }
-
-errors:
-  type_base_url: https://errors.acme.io/
-
-packages:
-  - spec: services/billing/api.yaml
-    output: ../services/billing/internal/api
+payer:
+  $ref: ../../schema/user.yaml#/components/schemas/User
 ```
 
-```console
-$ go-api-gen build
-  ../gen/apitypes/types.gen.go
-  ../services/billing/internal/api/types.gen.go
-  ../services/billing/internal/api/openapi.yaml
-  ../services/identity/internal/api/openapi.yaml
-go-api-gen: wrote 4 of 4 files
-```
-
-Billing's generated code **imports** the shared type rather than redeclaring it:
+Two outputs come out of each service, and they bundle differently on purpose.
+Billing's generated Go **imports** the shared type:
 
 ```go
 import "github.com/acme/monorepo/gen/apitypes"
@@ -72,9 +81,81 @@ type Invoice struct {
 }
 ```
 
-Its `openapi.yaml`, meanwhile, is fully self-contained and tree-shaken: the
-shared schemas it reaches are inlined as components, shared parameters are
-inlined at their use sites, and shared schemas it never touches are left out.
+Billing's `openapi.yaml` **inlines** it, because a gateway cannot follow a Go
+import. The document is self-contained and tree-shaken: shared schemas it
+reaches become components, shared parameters are inlined at their use sites,
+and shared schemas it never touches are left out entirely.
+
+Ownership is checked rather than assumed. A schema reached by two services must
+live in a shared root, and a Go name claimed twice is an error that names both
+claimants.
+
+## Configuration
+
+One file, at the repo root beside `go.mod`, so no path in it needs a `../`:
+
+```yaml
+version: 1
+
+shared:
+  apitypes:
+    from: schema
+    to: gen/apitypes
+
+services:
+  billing:
+    spec: services/billing/api.yaml
+    to: services/billing/internal/api
+  identity:
+    spec: services/identity/api.yaml
+    to: services/identity/internal/api
+
+generate: [types, validate, server, spec]
+
+types:
+  format:uuid:
+    go: uuid.UUID
+    import: github.com/google/uuid
+
+errors:
+  type_base_url: https://errors.acme.io/
+
+unified:
+  to: gen/openapi.yaml
+  title: Acme Platform API
+  version: "2026.1"
+  servers:
+    - { url: https://api.acme.io, description: Production }
+  exclude: [internal-ops]
+```
+
+| Key | What it does |
+|---|---|
+| `shared.<name>.from` | A directory of component files, generated **once** into one Go package however many services reference it. |
+| `shared.<name>.to` | Where that package is written. |
+| `services.<name>.spec` | The service's root document. |
+| `services.<name>.to` | Where its generated code and bundled `openapi.yaml` are written. |
+| `generate` | The default target list. A service may override it with its own `generate`. |
+| `types` | Go type overrides, keyed `format:<name>` for an OpenAPI format or by schema name for a single component. |
+| `errors.type_base_url` | Prefixed to an error slug to form the RFC 9457 `type` URI. |
+| `unified.*` | The platform-wide document — see below. |
+
+Shared roots and services are keyed by name rather than listed, and the name is
+the one the tool uses everywhere else: in diagnostics (`services.billing:`
+rather than `packages[2]:`), and in `unified.exclude`, which names a service
+instead of repeating its output path. The Go package name is the basename of
+`to` — `apitypes`, `api` — overridable per entry with `package:`.
+
+Targets are `types`, `validate`, `server`, `client`, `fake`, and `spec`. Naming
+one pulls in what it needs: `server` implies `types`, `fake` implies `server`.
+Relative paths resolve against the config file's directory.
+
+Loaded through [Viper](https://github.com/spf13/viper): YAML, JSON, or TOML,
+discovered by walking up from the working directory. Unknown keys are an error
+rather than a silent no-op. A few settings can be overridden from the
+environment with the `GOAPIGEN_` prefix, for example
+`GOAPIGEN_ERRORS_TYPE_BASE_URL` — but generated code is committed, so an
+override that differs from what CI regenerates with will fail `check`.
 
 ## Optional fields
 
@@ -99,19 +180,16 @@ v, ok := req.Name.Get()
 platform-wide document, for an API gateway, a docs portal, or a client that
 spans services.
 
-```yaml
-unified:
-  output: ../gen/openapi.yaml
-  title: Acme Platform API
-  version: "2026.1"
-  servers:
-    - { url: https://api.acme.io, description: Production }
-  # exclude: [../services/internal-ops/internal/api]
-```
-
 ```console
+$ go-api-gen build
+  gen/apitypes/types.gen.go
+  services/billing/internal/api/types.gen.go
+  services/billing/internal/api/openapi.yaml
+  services/identity/internal/api/openapi.yaml
+go-api-gen: wrote 4 of 4 files
+
 $ go-api-gen unify
-go-api-gen: wrote ../gen/openapi.yaml
+go-api-gen: wrote gen/openapi.yaml
 
 $ go-api-gen unify --stdout | redocly lint -
 ```
@@ -238,14 +316,6 @@ The CLI is built on [Cobra](https://github.com/spf13/cobra), so
 
 Generated output is deterministic, so `check` is a reliable drift gate.
 
-## Configuration
-
-Loaded through [Viper](https://github.com/spf13/viper): YAML, JSON, or TOML,
-discovered by walking up from the working directory. Unknown keys are an error
-rather than a silent no-op. A few settings can be overridden from the
-environment with the `GOAPIGEN_` prefix, for example
-`GOAPIGEN_ERRORS_TYPE_BASE_URL`.
-
 ## Status
 
 Under construction. Working today:
@@ -262,6 +332,9 @@ Under construction. Working today:
 - [x] `x-validate` custom rules with compile-enforced interfaces
 - [x] RFC 9457 error package and middleware
 - [x] Server: routing, parameter parsing, body decoding, typed handlers
+- [x] Named `shared`/`services` config, with targets implying their
+      prerequisites
+- [ ] Selecting one service on the command line: `go-api-gen build billing`
 - [ ] Typed client
 - [ ] Test fakes
 

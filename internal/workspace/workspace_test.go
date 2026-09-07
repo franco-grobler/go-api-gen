@@ -23,7 +23,7 @@ func build(t *testing.T, files map[string]string) (*Workspace, string, error) {
 			t.Fatal(err)
 		}
 	}
-	cfg, err := config.Load(filepath.Join(dir, "api", "go-api-gen.yaml"))
+	cfg, err := config.Load(filepath.Join(dir, "go-api-gen.yaml"))
 	if err != nil {
 		return nil, dir, err
 	}
@@ -35,18 +35,21 @@ func build(t *testing.T, files map[string]string) (*Workspace, string, error) {
 func monorepo() map[string]string {
 	return map[string]string{
 		"go.mod": "module github.com/acme/monorepo\n\ngo 1.24\n",
-		"api/go-api-gen.yaml": `
+		"go-api-gen.yaml": `
 version: 1
-schemas:
-  - path: shared
-    output: ../gen/apitypes
-packages:
-  - spec: services/billing/api.yaml
-    output: ../services/billing/internal/api
-  - spec: services/identity/api.yaml
-    output: ../services/identity/internal/api
+shared:
+  apitypes:
+    from: schema
+    to: gen/apitypes
+services:
+  billing:
+    spec: services/billing/api.yaml
+    to: services/billing/internal/api
+  identity:
+    spec: services/identity/api.yaml
+    to: services/identity/internal/api
 `,
-		"api/shared/user.yaml": `
+		"schema/user.yaml": `
 components:
   schemas:
     User:
@@ -57,7 +60,7 @@ components:
     Address: { type: object, properties: { line1: { type: string } } }
     NeverUsed: { type: object }
 `,
-		"api/services/billing/api.yaml": `
+		"services/billing/api.yaml": `
 openapi: 3.1.0
 info: { title: Billing, version: "1" }
 paths:
@@ -75,9 +78,9 @@ components:
     Invoice:
       type: object
       properties:
-        payer: { $ref: ../../shared/user.yaml#/components/schemas/User }
+        payer: { $ref: ../../schema/user.yaml#/components/schemas/User }
 `,
-		"api/services/identity/api.yaml": `
+		"services/identity/api.yaml": `
 openapi: 3.1.0
 info: { title: Identity, version: "1" }
 paths:
@@ -89,7 +92,7 @@ paths:
           description: ok
           content:
             application/json:
-              schema: { $ref: ../../shared/user.yaml#/components/schemas/User }
+              schema: { $ref: ../../schema/user.yaml#/components/schemas/User }
 `,
 	}
 }
@@ -100,14 +103,14 @@ func TestOwnershipAndImports(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if len(w.Roots) != 1 || len(w.Packages) != 2 {
+	if len(w.Roots) != 1 || len(w.Services) != 2 {
 		t.Fatalf(
-			"got %d roots and %d packages, want 1 and 2",
+			"got %d roots and %d services, want 1 and 2",
 			len(w.Roots),
-			len(w.Packages),
+			len(w.Services),
 		)
 	}
-	root, billing, identity := w.Roots[0], w.Packages[0], w.Packages[1]
+	root, billing, identity := w.Roots[0], w.Services[0], w.Services[1]
 
 	// Import paths are inferred from the enclosing go.mod.
 	want := "github.com/acme/monorepo/gen/apitypes"
@@ -149,11 +152,11 @@ func TestOwnershipAndImports(t *testing.T) {
 		)
 	}
 
-	for _, p := range []*Package{billing, identity} {
+	for _, p := range []*Service{billing, identity} {
 		if len(p.Imports) != 1 || p.Imports[0] != root {
 			t.Errorf(
 				"%s Imports = %v, want the shared root",
-				p.Cfg.Output,
+				p.Name,
 				p.Imports,
 			)
 		}
@@ -175,7 +178,7 @@ func TestOwnershipAndImports(t *testing.T) {
 
 func TestNameCollisionIsAnError(t *testing.T) {
 	files := monorepo()
-	files["api/shared/billing.yaml"] = "components:\n  schemas:\n    User: { " +
+	files["schema/billing.yaml"] = "components:\n  schemas:\n    User: { " +
 		"type: object }\n"
 
 	_, _, err := build(t, files)
@@ -183,7 +186,7 @@ func TestNameCollisionIsAnError(t *testing.T) {
 		t.Fatal("Load succeeded, want a collision error")
 	}
 	wants := []string{
-		`Go type name "User" is claimed twice`, "x-go-name", "name_prefix",
+		`Go type name "User" is claimed twice`, "x-go-name", "prefix",
 	}
 	for _, want := range wants {
 		if !strings.Contains(err.Error(), want) {
@@ -194,7 +197,7 @@ func TestNameCollisionIsAnError(t *testing.T) {
 
 func TestXGoNameResolvesCollision(t *testing.T) {
 	files := monorepo()
-	files["api/shared/billing.yaml"] = "components:\n  schemas:\n    User: { " +
+	files["schema/billing.yaml"] = "components:\n  schemas:\n    User: { " +
 		"type: object, x-go-name: BillingUser }\n"
 
 	w, _, err := build(t, files)
@@ -214,7 +217,7 @@ func TestXGoNameResolvesCollision(t *testing.T) {
 // generating it twice is the duplication the tool exists to avoid.
 func TestCrossServiceLeakIsAnError(t *testing.T) {
 	files := monorepo()
-	files["api/services/identity/api.yaml"] = `
+	files["services/identity/api.yaml"] = `
 openapi: 3.1.0
 info: { title: Identity, version: "1" }
 paths:
@@ -232,7 +235,7 @@ paths:
 	if err == nil {
 		t.Fatal("Load succeeded, want a cross-service reference error")
 	}
-	if !strings.Contains(err.Error(), "Move it into a shared schema root") {
+	if !strings.Contains(err.Error(), "Move it into a shared root") {
 		t.Errorf("error = %v\nwant guidance about moving the schema to a "+
 			"shared root", err)
 	}
@@ -240,9 +243,9 @@ paths:
 
 func TestUncoveredFileIsAnError(t *testing.T) {
 	files := monorepo()
-	files["api/loose/thing.yaml"] = "components:\n  schemas:\n    Thing: { " +
+	files["loose/thing.yaml"] = "components:\n  schemas:\n    Thing: { " +
 		"type: object }\n"
-	files["api/services/billing/api.yaml"] = `
+	files["services/billing/api.yaml"] = `
 openapi: 3.1.0
 info: { title: Billing, version: "1" }
 paths:
@@ -260,7 +263,7 @@ paths:
 	if err == nil {
 		t.Fatal("Load succeeded, want an uncovered-file error")
 	}
-	if !strings.Contains(err.Error(), "not covered by any schema root") {
+	if !strings.Contains(err.Error(), "not covered by any shared root") {
 		t.Errorf("error = %v\nwant an uncovered-file error", err)
 	}
 }

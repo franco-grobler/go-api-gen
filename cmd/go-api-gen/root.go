@@ -29,7 +29,7 @@ func newRootCmd() *cobra.Command {
 		Short: "Generate Go code and OpenAPI documents from composable specs",
 		Long: `go-api-gen is a spec-first OpenAPI generator for Go monorepos.
 
-Shared schemas are authored once in a schema root, generated once into a single
+Shared schemas are authored once in a shared root, generated once into a single
 Go package, and imported by every service that references them. Each service
 still gets a self-contained, tree-shaken OpenAPI document of its own, and the
 unify command stitches them all into one platform-wide document.`,
@@ -159,7 +159,7 @@ func newUnifyCmd(opts *options) *cobra.Command {
 		Short: "Stitch every service spec into one unified OpenAPI document",
 		Long: `Stitch every service spec into one unified OpenAPI document.
 
-The per-package documents that build produces each describe one service. The
+The per-service documents that build produces each describe one service. The
 unified document describes the platform as a whole, for an API gateway, a docs
 portal, or a client that spans services.
 
@@ -169,7 +169,7 @@ own are tagged with their service's title, so the merged document stays
 navigable. Every schema any service reaches is inlined as a component, so the
 result depends on no other file.
 
-The output path comes from unified.output in the config unless --output is
+The output path comes from unified.to in the config unless --output is
 given.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -210,7 +210,7 @@ given.`,
 		"output",
 		"o",
 		"",
-		"write the unified spec here (overrides unified.output)",
+		"write the unified spec here (overrides unified.to)",
 	)
 	f.BoolVar(
 		&stdout,

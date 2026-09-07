@@ -32,7 +32,7 @@ func unify(
 		}
 	}
 
-	cfg, err := config.Load(filepath.Join(dir, "api", "go-api-gen.yaml"))
+	cfg, err := config.Load(filepath.Join(dir, "go-api-gen.yaml"))
 	if err != nil {
 		return "", nil, err
 	}
@@ -64,18 +64,21 @@ func service(title, paths string) string {
 
 const unifiedConfig = `
 version: 1
-schemas:
-  - path: shared
-    output: ../gen/apitypes
-packages:
-  - spec: services/billing/api.yaml
-    output: ../gen/billing
+shared:
+  apitypes:
+    from: schema
+    to: gen/apitypes
+services:
+  billing:
+    spec: services/billing/api.yaml
+    to: gen/billing
     generate: [types]
-  - spec: services/identity/api.yaml
-    output: ../gen/identity
+  identity:
+    spec: services/identity/api.yaml
+    to: gen/identity
     generate: [types]
 unified:
-  output: ../gen/openapi.yaml
+  to: gen/openapi.yaml
   title: Acme Platform API
   version: "2026.1"
   servers:
@@ -84,10 +87,10 @@ unified:
 
 func twoServices() map[string]string {
 	return map[string]string{
-		"api/go-api-gen.yaml": unifiedConfig,
-		"api/shared/user.yaml": "components:\n  schemas:\n    User: { type: " +
+		"go-api-gen.yaml": unifiedConfig,
+		"schema/user.yaml": "components:\n  schemas:\n    User: { type: " +
 			"object, required: [id], properties: { id: { type: string } } }\n",
-		"api/services/billing/api.yaml": service("Billing", `  /invoices:
+		"services/billing/api.yaml": service("Billing", `  /invoices:
     get:
       operationId: listInvoices
       responses:
@@ -102,9 +105,9 @@ components:
       type: object
       required: [payer]
       properties:
-        payer: { $ref: ../../shared/user.yaml#/components/schemas/User }
+        payer: { $ref: ../../schema/user.yaml#/components/schemas/User }
 `),
-		"api/services/identity/api.yaml": service("Identity", `  /users:
+		"services/identity/api.yaml": service("Identity", `  /users:
     get:
       operationId: listUsers
       responses:
@@ -112,7 +115,7 @@ components:
           description: ok
           content:
             application/json:
-              schema: { $ref: ../../shared/user.yaml#/components/schemas/User }
+              schema: { $ref: ../../schema/user.yaml#/components/schemas/User }
 `),
 	}
 }
@@ -151,7 +154,7 @@ func TestUnifyMergesServices(t *testing.T) {
 	}
 
 	// Nothing may still point outside the document.
-	if strings.Contains(text, "../../shared") {
+	if strings.Contains(text, "../../schema") {
 		t.Errorf("unified document still references another file:\n%s", text)
 	}
 
@@ -200,7 +203,7 @@ func TestUnifyTagsByServiceTitle(t *testing.T) {
 
 func TestUnifyPreservesAuthoredTags(t *testing.T) {
 	files := twoServices()
-	files["api/services/identity/api.yaml"] = service("Identity", `  /users:
+	files["services/identity/api.yaml"] = service("Identity", `  /users:
     get:
       operationId: listUsers
       tags: [people]
@@ -221,13 +224,13 @@ func TestUnifyPreservesAuthoredTags(t *testing.T) {
 // gateway arrangement.
 func TestUnifyMergesMethodsOfOnePath(t *testing.T) {
 	files := twoServices()
-	files["api/services/billing/api.yaml"] = service("Billing", `  /things:
+	files["services/billing/api.yaml"] = service("Billing", `  /things:
     get:
       operationId: getThing
       responses:
         "200": { description: ok }
 `)
-	files["api/services/identity/api.yaml"] = service("Identity", `  /things:
+	files["services/identity/api.yaml"] = service("Identity", `  /things:
     post:
       operationId: postThing
       responses:
@@ -286,8 +289,8 @@ func TestUnifyRejectsConflicts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			files := twoServices()
-			files["api/services/billing/api.yaml"] = tt.billing
-			files["api/services/identity/api.yaml"] = tt.identity
+			files["services/billing/api.yaml"] = tt.billing
+			files["services/identity/api.yaml"] = tt.identity
 			_, _, err := unify(t, files)
 			if err == nil {
 				t.Fatal("unify succeeded, want a conflict error")
@@ -299,10 +302,9 @@ func TestUnifyRejectsConflicts(t *testing.T) {
 	}
 }
 
-func TestUnifyExcludesPackages(t *testing.T) {
+func TestUnifyExcludesServices(t *testing.T) {
 	files := twoServices()
-	files["api/go-api-gen.yaml"] = unifiedConfig + "  exclude: " +
-		"[../gen/identity]\n"
+	files["go-api-gen.yaml"] = unifiedConfig + "  exclude: [identity]\n"
 
 	_, doc, err := unify(t, files)
 	if err != nil {
@@ -310,23 +312,23 @@ func TestUnifyExcludesPackages(t *testing.T) {
 	}
 	paths := mapAt(t, doc, "paths")
 	if _, ok := paths["/users"]; ok {
-		t.Error("an excluded package still contributed its paths")
+		t.Error("an excluded service still contributed its paths")
 	}
 	if _, ok := paths["/invoices"]; !ok {
-		t.Error("the included package lost its paths")
+		t.Error("the included service lost its paths")
 	}
 }
 
 func TestUnifyRejectsUnknownExclude(t *testing.T) {
 	files := twoServices()
-	files["api/go-api-gen.yaml"] = unifiedConfig + "  exclude: [../gen/nope]\n"
+	files["go-api-gen.yaml"] = unifiedConfig + "  exclude: [nope]\n"
 
 	_, _, err := unify(t, files)
 	if err == nil {
-		t.Fatal("config loaded, want an error for an exclude matching no " +
-			"package")
+		t.Fatal("config loaded, want an error for an exclude naming no " +
+			"service")
 	}
-	if !strings.Contains(err.Error(), "does not match any package output") {
+	if !strings.Contains(err.Error(), "does not name a service") {
 		t.Errorf("error = %v, want guidance about the unmatched exclude", err)
 	}
 }

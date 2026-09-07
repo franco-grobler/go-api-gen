@@ -21,7 +21,7 @@ const (
 type validateEmitter struct {
 	ws   *workspace.Workspace
 	file *File
-	pkg  *workspace.Package
+	svc  *workspace.Service
 
 	validatePkg string   // qualifier for the validate runtime package
 	patterns    []string // regexp vars to declare, in emission order
@@ -33,12 +33,12 @@ type validateEmitter struct {
 // Constraints become plain Go code rather than tags interpreted at runtime, so
 // what runs is what you can read, step through, and grep for.
 func (g *Generator) EmitValidate(
-	file *File, pkg *workspace.Package, declared []queued,
+	file *File, svc *workspace.Service, declared []queued,
 ) error {
 	e := &validateEmitter{
 		ws:          g.ws,
 		file:        file,
-		pkg:         pkg,
+		svc:         svc,
 		patternName: map[string]string{},
 	}
 	e.validatePkg = file.Import(ValidateImport)
@@ -194,7 +194,7 @@ func hasRequired(s *spec.Schema) bool {
 }
 
 func (e *validateEmitter) embeddedName(s *spec.Schema) string {
-	return lastSegment(e.ws.Qualify(s, e.pkg))
+	return lastSegment(e.ws.Qualify(s, e.svc))
 }
 
 // property renders the checks for one struct field.

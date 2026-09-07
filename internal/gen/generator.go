@@ -41,12 +41,12 @@ func (g *Generator) Files() map[string][]byte { return g.files }
 func (g *Generator) Run() error {
 	for _, root := range g.ws.Roots {
 		if err := g.emitRoot(root); err != nil {
-			return fmt.Errorf("schema root %s: %w", root.Cfg.Path, err)
+			return fmt.Errorf("shared root %s: %w", root.Name, err)
 		}
 	}
-	for _, pkg := range g.ws.Packages {
-		if err := g.emitPackage(pkg); err != nil {
-			return fmt.Errorf("package %s: %w", pkg.Cfg.Spec, err)
+	for _, svc := range g.ws.Services {
+		if err := g.emitService(svc); err != nil {
+			return fmt.Errorf("service %s: %w", svc.Name, err)
 		}
 	}
 	return nil
@@ -57,7 +57,7 @@ func (g *Generator) Run() error {
 func (g *Generator) emitRoot(root *workspace.Root) error {
 	types := g.newTypeEmitter(nil, root.Schemas)
 
-	file := NewFile(root.GoPackage, g.relSource(root.Cfg.Path))
+	file := NewFile(root.GoPackage, g.relSource(root.Cfg.From))
 	if err := types.EmitTypes(file); err != nil {
 		return err
 	}
@@ -68,58 +68,58 @@ func (g *Generator) emitRoot(root *workspace.Root) error {
 
 	// A shared root always emits validation: a service that imports one of
 	// its types has no way to generate the missing method itself.
-	valid := NewFile(root.GoPackage, g.relSource(root.Cfg.Path))
+	valid := NewFile(root.GoPackage, g.relSource(root.Cfg.From))
 	if err := g.EmitValidate(valid, nil, types.declared); err != nil {
 		return err
 	}
 	return g.add(filepath.Join(root.OutputDir, "validate.gen.go"), valid)
 }
 
-func (g *Generator) emitPackage(pkg *workspace.Package) error {
-	types := g.newTypeEmitter(pkg, pkg.Local)
+func (g *Generator) emitService(svc *workspace.Service) error {
+	types := g.newTypeEmitter(svc, svc.Local)
 
 	// Naming is settled before anything is written. The server references
 	// schemas the type walk never reaches on its own, such as an inline
 	// response body, and those must be declared in types.gen.go rather than
 	// referenced from a file that never declares them.
-	if pkg.Cfg.Generates(config.TargetServer) {
-		if err := g.planOperations(pkg, types); err != nil {
+	if svc.Cfg.Generates(config.TargetServer) {
+		if err := g.planOperations(svc, types); err != nil {
 			return err
 		}
 	}
 
-	if pkg.Cfg.Generates(config.TargetTypes) {
-		file := NewFile(pkg.GoPackage, g.relSource(pkg.Cfg.Spec))
+	if svc.Cfg.Generates(config.TargetTypes) {
+		file := NewFile(svc.GoPackage, g.relSource(svc.Cfg.Spec))
 		if err := types.EmitTypes(file); err != nil {
 			return err
 		}
-		path := filepath.Join(pkg.OutputDir, "types.gen.go")
+		path := filepath.Join(svc.OutputDir, "types.gen.go")
 		if err := g.add(path, file); err != nil {
 			return err
 		}
 	}
-	if pkg.Cfg.Generates(config.TargetValidate) {
-		file := NewFile(pkg.GoPackage, g.relSource(pkg.Cfg.Spec))
-		if err := g.EmitValidate(file, pkg, types.declared); err != nil {
+	if svc.Cfg.Generates(config.TargetValidate) {
+		file := NewFile(svc.GoPackage, g.relSource(svc.Cfg.Spec))
+		if err := g.EmitValidate(file, svc, types.declared); err != nil {
 			return err
 		}
-		path := filepath.Join(pkg.OutputDir, "validate.gen.go")
+		path := filepath.Join(svc.OutputDir, "validate.gen.go")
 		if err := g.add(path, file); err != nil {
 			return err
 		}
 	}
-	if pkg.Cfg.Generates(config.TargetServer) {
-		file := NewFile(pkg.GoPackage, g.relSource(pkg.Cfg.Spec))
-		if err := g.EmitServer(file, pkg, types); err != nil {
+	if svc.Cfg.Generates(config.TargetServer) {
+		file := NewFile(svc.GoPackage, g.relSource(svc.Cfg.Spec))
+		if err := g.EmitServer(file, svc, types); err != nil {
 			return err
 		}
-		path := filepath.Join(pkg.OutputDir, "server.gen.go")
+		path := filepath.Join(svc.OutputDir, "server.gen.go")
 		if err := g.add(path, file); err != nil {
 			return err
 		}
 	}
-	if pkg.Cfg.Generates(config.TargetSpec) {
-		if err := g.emitSpec(pkg); err != nil {
+	if svc.Cfg.Generates(config.TargetSpec) {
+		if err := g.emitSpec(svc); err != nil {
 			return err
 		}
 	}
@@ -134,7 +134,7 @@ func (g *Generator) emitPackage(pkg *workspace.Package) error {
 // order keeps a synthesized name stable regardless of which emitter runs
 // first.
 func (g *Generator) planOperations(
-	pkg *workspace.Package, types *typeEmitter,
+	svc *workspace.Service, types *typeEmitter,
 ) error {
 	scratch := NewFile("scratch", "")
 	visit := func(s *spec.Schema, owner, role string) error {
@@ -146,7 +146,7 @@ func (g *Generator) planOperations(
 	}
 
 	names := naming.NewDeduper()
-	for _, pi := range pkg.Doc.Paths {
+	for _, pi := range svc.Doc.Paths {
 		for _, op := range pi.Operations {
 			name := names.Take(naming.Exported(op.OperationID))
 			for _, p := range op.Parameters {
@@ -174,13 +174,13 @@ func (g *Generator) planOperations(
 }
 
 // emitSpec writes the self-contained, tree-shaken OpenAPI document.
-func (g *Generator) emitSpec(pkg *workspace.Package) error {
-	comps, err := g.bundleComponents(pkg)
+func (g *Generator) emitSpec(svc *workspace.Service) error {
+	comps, err := g.bundleComponents(svc)
 	if err != nil {
 		return err
 	}
 	node, err := g.ws.Loader.Bundle(
-		pkg.Doc,
+		svc.Doc,
 		spec.BundleOptions{Components: comps},
 	)
 	if err != nil {
@@ -192,27 +192,27 @@ func (g *Generator) emitSpec(pkg *workspace.Package) error {
 	}
 	var out bytes.Buffer
 	out.WriteString("# Code generated by go-api-gen. DO NOT EDIT.\n")
-	fmt.Fprintf(&out, "# Source: %s\n", g.relSource(pkg.Cfg.Spec))
+	fmt.Fprintf(&out, "# Source: %s\n", g.relSource(svc.Cfg.Spec))
 	out.Write(data)
 
-	g.files[filepath.Join(pkg.OutputDir, "openapi.yaml")] = out.Bytes()
+	g.files[filepath.Join(svc.OutputDir, "openapi.yaml")] = out.Bytes()
 	return nil
 }
 
 // bundleComponents names each reachable schema for the bundled document.
 //
-// The bundle mixes a package's own schemas with ones imported from shared
+// The bundle mixes a service's own schemas with ones imported from shared
 // roots, so a name unique within each Go package can still collide here. The
 // Go name is preferred so the document and the code agree, and a collision is
 // resolved by qualifying with the owning package.
-func (g *Generator) bundleComponents(pkg *workspace.Package) (
+func (g *Generator) bundleComponents(svc *workspace.Service) (
 	[]spec.BundleComponent,
 	error,
 ) {
 	taken := map[string]*spec.Schema{}
 	var out []spec.BundleComponent
 
-	for _, s := range pkg.Reachable {
+	for _, s := range svc.Reachable {
 		name := g.ws.GoName(s)
 		owner := g.ws.Owner(s)
 		if prev, dup := taken[name]; dup && prev != s {

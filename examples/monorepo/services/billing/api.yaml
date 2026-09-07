@@ -5,8 +5,8 @@ info:
 paths:
   /invoices:
     parameters:
-      - $ref: ../../shared/common.yaml#/components/parameters/Cursor
-      - $ref: ../../shared/common.yaml#/components/parameters/Limit
+      - $ref: ../../schema/common.yaml#/components/parameters/Cursor
+      - $ref: ../../schema/common.yaml#/components/parameters/Limit
     get:
       operationId: listInvoices
       summary: List invoices
@@ -22,7 +22,7 @@ paths:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/Invoice' }
-                  page: { $ref: ../../shared/common.yaml#/components/schemas/PageInfo }
+                  page: { $ref: ../../schema/common.yaml#/components/schemas/PageInfo }
     post:
       operationId: createInvoice
       requestBody:
@@ -43,8 +43,8 @@ components:
       required: [id, payer, total, status]
       properties:
         id: { type: string, format: uuid }
-        payer: { $ref: ../../shared/user.yaml#/components/schemas/User }
-        total: { $ref: ../../shared/common.yaml#/components/schemas/Money }
+        payer: { $ref: ../../schema/user.yaml#/components/schemas/User }
+        total: { $ref: ../../schema/common.yaml#/components/schemas/Money }
         status:
           type: string
           enum: [draft, open, paid, void]
@@ -55,12 +55,12 @@ components:
             required: [description, amount]
             properties:
               description: { type: string, minLength: 1 }
-              amount: { $ref: ../../shared/common.yaml#/components/schemas/Money }
+              amount: { $ref: ../../schema/common.yaml#/components/schemas/Money }
 
     CreateInvoice:
       type: object
       required: [payer_id, total]
       properties:
         payer_id: { type: string, format: uuid }
-        total: { $ref: ../../shared/common.yaml#/components/schemas/Money }
+        total: { $ref: ../../schema/common.yaml#/components/schemas/Money }
         note: { type: string, maxLength: 500 }

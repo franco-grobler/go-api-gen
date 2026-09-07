@@ -16,7 +16,7 @@ type serverEmitter struct {
 	ws   *workspace.Workspace
 	gen  *Generator
 	file *File
-	pkg  *workspace.Package
+	svc  *workspace.Service
 
 	types *typeEmitter
 
@@ -45,9 +45,9 @@ type operation struct {
 // handler receives a value that has already been checked and returns either a
 // result or an error, and every error leaves as one problem+json shape.
 func (g *Generator) EmitServer(
-	file *File, pkg *workspace.Package, types *typeEmitter,
+	file *File, svc *workspace.Service, types *typeEmitter,
 ) error {
-	e := &serverEmitter{ws: g.ws, gen: g, file: file, pkg: pkg, types: types}
+	e := &serverEmitter{ws: g.ws, gen: g, file: file, svc: svc, types: types}
 	e.httpPkg = file.Import("net/http")
 	e.ctxPkg = file.Import("context")
 	e.apierrPkg = file.Import(APIErrImport)
@@ -78,7 +78,7 @@ func (e *serverEmitter) operations() ([]*operation, error) {
 	var out []*operation
 	names := naming.NewDeduper()
 
-	for _, pi := range e.pkg.Doc.Paths {
+	for _, pi := range e.svc.Doc.Paths {
 		for _, op := range pi.Operations {
 			name := names.Take(naming.Exported(op.OperationID))
 			o := &operation{op: op, name: name, request: name + "Request"}
@@ -409,7 +409,7 @@ func (e *serverEmitter) parseInto(s *spec.Schema, field, raw, loc, ind string,
 		f.P("%s}", ind)
 
 	default:
-		target := e.ws.Qualify(s, e.pkg)
+		target := e.ws.Qualify(s, e.svc)
 		if target == "" {
 			target = t.Expr
 		}
@@ -436,7 +436,7 @@ func (e *serverEmitter) validateValue(b *strings.Builder, s *spec.Schema,
 	expr, loc, ind string,
 ) {
 	ve := &validateEmitter{
-		ws: e.ws, file: e.file, pkg: e.pkg,
+		ws: e.ws, file: e.file, svc: e.svc,
 		validatePkg: e.validatePkg, patternName: map[string]string{},
 	}
 	ve.value(b, s, expr, loc, ind)

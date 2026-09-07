@@ -13,6 +13,6 @@ paths:
           description: The user.
           content:
             application/json:
-              schema: { $ref: ../../shared/user.yaml#/components/schemas/User }
+              schema: { $ref: ../../schema/user.yaml#/components/schemas/User }
         "404":
           description: No such user.

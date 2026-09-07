@@ -1,14 +1,20 @@
 // Package config loads and validates the go-api-gen workspace configuration.
 //
-// A workspace has one config file (conventionally api/go-api-gen.yaml). It
-// declares shared schema roots, which each become a single Go package generated
-// once, and packages, which are per-service specs that reference those roots.
+// A workspace has one config file, conventionally go-api-gen.yaml at the
+// repository root beside go.mod, so that every path in it is repository
+// relative rather than a chain of "..". It declares shared schema roots, which
+// each become a single Go package generated once, and services, whose specs
+// reference those roots.
+//
+// Shared roots and services are keyed by name rather than listed, so that a
+// diagnostic can say "services.billing" instead of "packages[2]", and
+// unified.exclude can name a service instead of repeating its output path.
 //
 // Loading goes through Viper, so the file may be written as YAML, JSON, or
 // TOML, and a handful of settings can be overridden from the environment with
 // the GOAPIGEN_ prefix, which is what CI needs when a base URL differs per
-// environment. Viper lower-cases every key it reads, so the map keys under
-// "formats" and "types" are matched case-insensitively; see TypeFor.
+// environment. Viper lower-cases every key it reads, which is why names are
+// compared case-insensitively throughout.
 package config
 
 import (
@@ -50,14 +56,24 @@ var AllTargets = []Target{
 	TargetClient, TargetFake, TargetSpec,
 }
 
-// unimplementedTargets are accepted by the schema but not yet emitted.
-//
-// They are excluded from the default set and rejected when named explicitly,
-// so that asking for one fails loudly instead of producing a successful run
-// that quietly writes nothing. Remove an entry as its emitter lands.
+// targetRequires records what a target cannot be generated without: validation
+// is emitted into the types file's package, and the server decodes into
+// generated types. Naming a target pulls its prerequisites in rather than
+// failing, because there is exactly one thing the author can have meant.
+var targetRequires = map[Target][]Target{
+	TargetValidate: {TargetTypes},
+	TargetServer:   {TargetTypes},
+	TargetClient:   {TargetTypes},
+	TargetFake:     {TargetServer, TargetTypes},
+}
+
+// unimplementedTargets are accepted by the schema but not yet emitted. They
+// are excluded from the default set, so that a workspace which does not ask
+// for one does not silently write nothing. Remove an entry as its emitter
+// lands.
 var unimplementedTargets = map[Target]string{}
 
-// DefaultTargets is what a package generates when it does not say.
+// DefaultTargets is what a workspace generates when it does not say.
 func DefaultTargets() []Target {
 	out := make([]Target, 0, len(AllTargets))
 	for _, t := range AllTargets {
@@ -77,45 +93,132 @@ func knownTarget(t Target) bool {
 	return false
 }
 
+// expandTargets returns ts with every prerequisite pulled in, ordered by
+// AllTargets so that emission order does not depend on how the list was
+// written. Unrecognised entries are kept, deduplicated, at the end, so that
+// validation can report them against the name the author actually used.
+func expandTargets(ts []Target) []Target {
+	want := map[Target]bool{}
+	seen := map[Target]bool{}
+	var unknown []Target
+	for _, t := range ts {
+		if !knownTarget(t) {
+			if !seen[t] {
+				seen[t] = true
+				unknown = append(unknown, t)
+			}
+			continue
+		}
+		want[t] = true
+		for _, req := range targetRequires[t] {
+			want[req] = true
+		}
+	}
+	out := make([]Target, 0, len(want)+len(unknown))
+	for _, t := range AllTargets {
+		if want[t] {
+			out = append(out, t)
+		}
+	}
+	return append(out, unknown...)
+}
+
 // Config is a parsed and validated workspace configuration.
 type Config struct {
-	Version  int                    `mapstructure:"version"`
-	Schemas  []*SchemaRoot          `mapstructure:"schemas"`
-	Formats  map[string]TypeMapping `mapstructure:"formats"`
-	Types    map[string]TypeMapping `mapstructure:"types"`
-	Errors   ErrorsConfig           `mapstructure:"errors"`
-	Packages []*Package             `mapstructure:"packages"`
-	Unified  *UnifiedConfig         `mapstructure:"unified"`
+	Version int `mapstructure:"version"`
+
+	// Shared and Services are keyed by name. Iterate them through SharedRoots
+	// and ServiceList rather than directly: map order is random, and generated
+	// output must not be.
+	Shared   map[string]*SchemaRoot `mapstructure:"shared"`
+	Services map[string]*Service    `mapstructure:"services"`
+
+	// Generate is the default target list, which a service may override with
+	// its own.
+	Generate []Target `mapstructure:"generate"`
+
+	Types   map[string]TypeMapping `mapstructure:"types"`
+	Errors  ErrorsConfig           `mapstructure:"errors"`
+	Unified *UnifiedConfig         `mapstructure:"unified"`
 
 	// Path is the absolute path of the config file, and Dir its directory.
 	// Every relative path in the file is resolved against Dir.
 	Path string `mapstructure:"-"`
 	Dir  string `mapstructure:"-"`
+
+	sharedRoots []*SchemaRoot
+	services    []*Service
 }
 
-// SchemaRoot is a directory of shared component files that generate into one
-// Go package. Every schema defined under it is owned by that package, and
-// service specs that $ref it import rather than regenerate it.
+// SharedRoots returns the shared schema roots in name order.
+func (c *Config) SharedRoots() []*SchemaRoot { return c.sharedRoots }
+
+// ServiceList returns the services in name order.
+func (c *Config) ServiceList() []*Service { return c.services }
+
+// SchemaRoot is a directory of shared component files that generates into one
+// Go package. Every schema defined under it is owned by that package, and a
+// service that $refs one imports it rather than regenerating its own copy.
 type SchemaRoot struct {
-	Path    string `mapstructure:"path"`
-	Output  string `mapstructure:"output"`
+	// Name is the key the root was declared under. It identifies the root in
+	// diagnostics.
+	Name string `mapstructure:"-"`
+
+	From    string `mapstructure:"from"`
+	To      string `mapstructure:"to"`
 	Package string `mapstructure:"package"`
 	Import  string `mapstructure:"import"`
 
-	// NamePrefix disambiguates Go type names when two roots define the same
+	// Prefix disambiguates Go type names when two roots define the same
 	// component name. It is applied to every type generated from this root.
-	NamePrefix string `mapstructure:"name_prefix"`
+	Prefix string `mapstructure:"prefix"`
 
-	// AbsPath and AbsOutput are Path and Output resolved against Config.Dir.
-	AbsPath   string `mapstructure:"-"`
-	AbsOutput string `mapstructure:"-"`
+	// AbsFrom and AbsTo are From and To resolved against Config.Dir.
+	AbsFrom string `mapstructure:"-"`
+	AbsTo   string `mapstructure:"-"`
 }
 
-// TypeMapping maps an OpenAPI format (or a named schema) onto a Go type.
+// Service is one service spec and the Go package generated from it.
+type Service struct {
+	// Name is the key the service was declared under. It identifies the
+	// service in diagnostics, in unified.exclude, and in the unified
+	// document's tags.
+	Name string `mapstructure:"-"`
+
+	Spec     string   `mapstructure:"spec"`
+	To       string   `mapstructure:"to"`
+	Package  string   `mapstructure:"package"`
+	Generate []Target `mapstructure:"generate"`
+
+	// AbsSpec and AbsTo are Spec and To resolved against Config.Dir.
+	AbsSpec string `mapstructure:"-"`
+	AbsTo   string `mapstructure:"-"`
+
+	// ownTargets records that the service declared its own target list, so an
+	// unknown target is reported once, against the place it was written,
+	// rather than once per service that inherited the workspace default.
+	ownTargets bool
+}
+
+// Generates reports whether this service emits the given target.
+func (s *Service) Generates(t Target) bool {
+	for _, g := range s.Generate {
+		if g == t {
+			return true
+		}
+	}
+	return false
+}
+
+// TypeMapping maps an OpenAPI format or a named schema onto a Go type.
 type TypeMapping struct {
-	Type   string `mapstructure:"type"`
+	Go     string `mapstructure:"go"`
 	Import string `mapstructure:"import"`
 }
+
+// formatKey namespaces format mappings inside the one "types" map. An OpenAPI
+// component name cannot contain a colon, so the two namespaces cannot collide.
+const formatKey = "format:"
 
 // ErrorsConfig controls the generated problem+json envelope.
 type ErrorsConfig struct {
@@ -126,26 +229,27 @@ type ErrorsConfig struct {
 }
 
 // UnifiedConfig describes the single stitched-together document produced by
-// the unify command. It is a separate deliverable from the per-package
+// the unify command. It is a separate deliverable from the per-service
 // bundles: those each describe one service, while this describes the platform
 // as a whole, for a gateway or a docs portal.
 type UnifiedConfig struct {
-	Output      string   `mapstructure:"output"`
+	To          string   `mapstructure:"to"`
 	Title       string   `mapstructure:"title"`
 	Version     string   `mapstructure:"version"`
 	Description string   `mapstructure:"description"`
 	Servers     []Server `mapstructure:"servers"`
 
-	// TagWithPackage tags each operation that declares no tags of its own with
-	// the contributing package's name, so a merged document stays navigable.
-	// It defaults to true; set it false to leave operations untagged.
-	TagWithPackage *bool `mapstructure:"tag_with_package"`
+	// TagWithService tags each operation that declares no tags of its own with
+	// its service's title, so a merged document stays navigable. It defaults
+	// to true; set it false to leave operations untagged.
+	TagWithService *bool `mapstructure:"tag_with_service"`
 
-	// Exclude lists package output paths to leave out, for internal services
-	// that should not appear in a platform-wide document.
+	// Exclude names services to leave out, for internal ones that should not
+	// appear in a platform-wide document.
 	Exclude []string `mapstructure:"exclude"`
 
-	AbsOutput string `mapstructure:"-"`
+	// AbsTo is To resolved against Config.Dir.
+	AbsTo string `mapstructure:"-"`
 }
 
 // Server is one entry of a servers list.
@@ -154,37 +258,17 @@ type Server struct {
 	Description string `mapstructure:"description"`
 }
 
-// Tags reports whether operations should be tagged with their package name.
+// Tags reports whether operations should be tagged with their service.
 func (u *UnifiedConfig) Tags() bool {
-	return u.TagWithPackage == nil || *u.TagWithPackage
+	return u.TagWithService == nil || *u.TagWithService
 }
 
-// Excludes reports whether a package output path is excluded from the unified
-// document.
-func (u *UnifiedConfig) Excludes(output string) bool {
+// Excludes reports whether a service is left out of the unified document.
+// The comparison is case-insensitive because Viper lower-cases the names it
+// reads as map keys but leaves the strings in this list alone.
+func (u *UnifiedConfig) Excludes(service string) bool {
 	for _, e := range u.Exclude {
-		if e == output {
-			return true
-		}
-	}
-	return false
-}
-
-// Package is one service spec and the Go package generated from it.
-type Package struct {
-	Spec     string   `mapstructure:"spec"`
-	Output   string   `mapstructure:"output"`
-	Package  string   `mapstructure:"package"`
-	Generate []Target `mapstructure:"generate"`
-
-	AbsSpec   string `mapstructure:"-"`
-	AbsOutput string `mapstructure:"-"`
-}
-
-// Generates reports whether this package emits the given target.
-func (p *Package) Generates(t Target) bool {
-	for _, g := range p.Generate {
-		if g == t {
+		if strings.EqualFold(e, service) {
 			return true
 		}
 	}
@@ -201,8 +285,18 @@ func (c *Config) TypeFor(schemaName string) (TypeMapping, bool) {
 // FormatFor returns the Go type configured for an OpenAPI format.
 // Lookup is case-insensitive because Viper lower-cases configuration keys.
 func (c *Config) FormatFor(format string) (TypeMapping, bool) {
-	m, ok := c.Formats[strings.ToLower(format)]
+	m, ok := c.Types[formatKey+strings.ToLower(format)]
 	return m, ok
+}
+
+// HasService reports whether a service of this name is configured.
+func (c *Config) HasService(name string) bool {
+	for _, s := range c.services {
+		if strings.EqualFold(s.Name, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // envOverrides are the settings that may be overridden from the environment.
@@ -325,25 +419,54 @@ func (c *Config) applyDefaults() {
 	if c.Version == 0 {
 		c.Version = 1
 	}
-	for _, s := range c.Schemas {
-		s.AbsPath = c.resolve(s.Path)
-		s.AbsOutput = c.resolve(s.Output)
+	if c.Generate == nil {
+		c.Generate = DefaultTargets()
+	}
+	c.Generate = expandTargets(c.Generate)
+
+	c.sharedRoots = make([]*SchemaRoot, 0, len(c.Shared))
+	for name, r := range c.Shared {
+		if r == nil {
+			r = &SchemaRoot{}
+			c.Shared[name] = r
+		}
+		r.Name = name
+		r.AbsFrom = c.resolve(r.From)
+		r.AbsTo = c.resolve(r.To)
+		if r.Package == "" {
+			r.Package = goPackageName(r.AbsTo)
+		}
+		c.sharedRoots = append(c.sharedRoots, r)
+	}
+	sort.Slice(c.sharedRoots, func(i, j int) bool {
+		return c.sharedRoots[i].Name < c.sharedRoots[j].Name
+	})
+
+	c.services = make([]*Service, 0, len(c.Services))
+	for name, s := range c.Services {
+		if s == nil {
+			s = &Service{}
+			c.Services[name] = s
+		}
+		s.Name = name
+		s.AbsSpec = c.resolve(s.Spec)
+		s.AbsTo = c.resolve(s.To)
 		if s.Package == "" {
-			s.Package = goPackageName(s.AbsOutput)
+			s.Package = goPackageName(s.AbsTo)
 		}
+		s.ownTargets = s.Generate != nil
+		if s.Generate == nil {
+			s.Generate = c.Generate
+		}
+		s.Generate = expandTargets(s.Generate)
+		c.services = append(c.services, s)
 	}
-	for _, p := range c.Packages {
-		p.AbsSpec = c.resolve(p.Spec)
-		p.AbsOutput = c.resolve(p.Output)
-		if p.Package == "" {
-			p.Package = goPackageName(p.AbsOutput)
-		}
-		if p.Generate == nil {
-			p.Generate = DefaultTargets()
-		}
-	}
+	sort.Slice(c.services, func(i, j int) bool {
+		return c.services[i].Name < c.services[j].Name
+	})
+
 	if u := c.Unified; u != nil {
-		u.AbsOutput = c.resolve(u.Output)
+		u.AbsTo = c.resolve(u.To)
 		if u.Title == "" {
 			u.Title = "Unified API"
 		}
@@ -391,9 +514,23 @@ func (c *Config) validate() error {
 	if c.Version != 1 {
 		add("version: unsupported version %d (expected 1)", c.Version)
 	}
-	if len(c.Schemas) == 0 && len(c.Packages) == 0 {
-		add("config declares neither schemas nor packages")
+	if len(c.Shared) == 0 && len(c.Services) == 0 {
+		add("config declares neither shared schema roots nor services")
 	}
+
+	checkTargets := func(where string, ts []Target) {
+		for _, t := range ts {
+			if !knownTarget(t) {
+				add(
+					"%s: unknown target %q (known: %s)",
+					where,
+					t,
+					targetList(),
+				)
+			}
+		}
+	}
+	checkTargets("generate", c.Generate)
 
 	// Output directories must be unique: two generators writing the same
 	// directory would silently clobber each other's files.
@@ -409,99 +546,69 @@ func (c *Config) validate() error {
 		owner[dir] = by
 	}
 
-	seenRoot := map[string]bool{}
-	for i, s := range c.Schemas {
-		where := fmt.Sprintf("schemas[%d]", i)
-		if s.Path == "" {
-			add("%s: path is required", where)
-		} else if seenRoot[s.AbsPath] {
-			add("%s: duplicate schema root path %q", where, s.Path)
+	seenFrom := map[string]string{}
+	for _, r := range c.sharedRoots {
+		where := "shared." + r.Name
+		if r.Name == "" {
+			add("shared: an entry is declared under an empty name")
+		}
+		if r.From == "" {
+			add("%s: from is required", where)
 		} else {
-			seenRoot[s.AbsPath] = true
-			if fi, err := os.Stat(s.AbsPath); err != nil {
-				add("%s: path %q: %v", where, s.Path, err)
+			if prev, dup := seenFrom[r.AbsFrom]; dup {
+				add("%s: from %q is already used by %s", where, r.From, prev)
+			} else {
+				seenFrom[r.AbsFrom] = where
+			}
+			if fi, err := os.Stat(r.AbsFrom); err != nil {
+				add("%s: from %q: %v", where, r.From, err)
 			} else if !fi.IsDir() {
-				add("%s: path %q is not a directory", where, s.Path)
+				add("%s: from %q is not a directory", where, r.From)
 			}
 		}
-		if s.Output == "" {
-			add("%s: output is required", where)
+		if r.To == "" {
+			add("%s: to is required", where)
+		}
+		if err := validIdent(r.Package); err != nil {
+			add("%s: package: %v", where, err)
+		}
+		claim(r.AbsTo, where)
+	}
+
+	seenSpec := map[string]string{}
+	for _, s := range c.services {
+		where := "services." + s.Name
+		if s.Name == "" {
+			add("services: an entry is declared under an empty name")
+		}
+		if s.Spec == "" {
+			add("%s: spec is required", where)
+		} else {
+			if prev, dup := seenSpec[s.AbsSpec]; dup {
+				add("%s: spec %q is already used by %s", where, s.Spec, prev)
+			} else {
+				seenSpec[s.AbsSpec] = where
+			}
+			if _, err := os.Stat(s.AbsSpec); err != nil {
+				add("%s: spec %q: %v", where, s.Spec, err)
+			}
+		}
+		if s.To == "" {
+			add("%s: to is required", where)
 		}
 		if err := validIdent(s.Package); err != nil {
 			add("%s: package: %v", where, err)
 		}
-		claim(s.AbsOutput, where)
+		if s.ownTargets {
+			checkTargets(where+".generate", s.Generate)
+		}
+		claim(s.AbsTo, where)
 	}
 
-	seenSpec := map[string]bool{}
-	for i, p := range c.Packages {
-		where := fmt.Sprintf("packages[%d]", i)
-		if p.Spec == "" {
-			add("%s: spec is required", where)
-		} else if seenSpec[p.AbsSpec] {
-			add("%s: duplicate spec %q", where, p.Spec)
-		} else {
-			seenSpec[p.AbsSpec] = true
-			if _, err := os.Stat(p.AbsSpec); err != nil {
-				add("%s: spec %q: %v", where, p.Spec, err)
-			}
-		}
-		if p.Output == "" {
-			add("%s: output is required", where)
-		}
-		if err := validIdent(p.Package); err != nil {
-			add("%s: package: %v", where, err)
-		}
-		for _, t := range p.Generate {
-			if !knownTarget(t) {
-				add(
-					"%s: generate: unknown target %q (known: %s)",
-					where,
-					t,
-					targetList(),
-				)
-			}
-		}
-		// Validation code is emitted into the types file's package and is
-		// meaningless without it; the server decodes into generated types.
-		if p.Generates(TargetValidate) && !p.Generates(TargetTypes) {
-			add("%s: generate: \"validate\" requires \"types\"", where)
-		}
-		if p.Generates(TargetServer) && !p.Generates(TargetTypes) {
-			add("%s: generate: \"server\" requires \"types\"", where)
-		}
-		if p.Generates(TargetClient) && !p.Generates(TargetTypes) {
-			add("%s: generate: \"client\" requires \"types\"", where)
-		}
-		if p.Generates(TargetFake) && !p.Generates(TargetServer) {
-			add("%s: generate: \"fake\" requires \"server\"", where)
-		}
-		claim(p.AbsOutput, where)
-	}
-
-	checkMapping := func(section, name string, m TypeMapping) {
-		if m.Type == "" {
-			add("%s[%q]: type is required", section, name)
-			return
-		}
-		// A qualified type with no import would generate code that does not
-		// compile, and the failure would surface far from its cause.
-		if qualifier, _, ok := strings.Cut(
-			m.Type,
-			".",
-		); ok && m.Import == "" && !strings.HasPrefix(m.Type, "[]") {
-			add("%s[%q]: type %q is qualified by package %q but no import is "+
-				"set", section, name, m.Type, qualifier)
-		}
-	}
 	if u := c.Unified; u != nil {
-		outputs := map[string]bool{}
-		for _, p := range c.Packages {
-			outputs[p.Output] = true
-		}
 		for _, e := range u.Exclude {
-			if !outputs[e] {
-				add("unified.exclude: %q does not match any package output", e)
+			if !c.HasService(e) {
+				add("unified.exclude: %q does not name a service", e)
 			}
 		}
 		for i, s := range u.Servers {
@@ -509,13 +616,23 @@ func (c *Config) validate() error {
 				add("unified.servers[%d]: url is required", i)
 			}
 		}
-		claim(u.AbsOutput, "unified")
+		claim(u.AbsTo, "unified")
 	}
-	for name, m := range c.Formats {
-		checkMapping("formats", name, m)
-	}
+
 	for name, m := range c.Types {
-		checkMapping("types", name, m)
+		if m.Go == "" {
+			add("types[%q]: go is required", name)
+			continue
+		}
+		// A qualified type with no import would generate code that does not
+		// compile, and the failure would surface far from its cause.
+		if qualifier, _, ok := strings.Cut(
+			m.Go,
+			".",
+		); ok && m.Import == "" && !strings.HasPrefix(m.Go, "[]") {
+			add("types[%q]: go %q is qualified by package %q but no import is "+
+				"set", name, m.Go, qualifier)
+		}
 	}
 
 	if len(errs) > 0 {

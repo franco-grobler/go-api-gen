@@ -34,7 +34,7 @@ const (
 type typeEmitter struct {
 	ws     *workspace.Workspace
 	mapper *gomap.Mapper
-	pkg    *workspace.Package // nil when emitting a shared root
+	svc    *workspace.Service // nil when emitting a shared root
 
 	dedupe *naming.Deduper
 	synth  map[*spec.Schema]string // inline schema -> synthesized type name
@@ -54,12 +54,12 @@ type queued struct {
 
 // newTypeEmitter returns the naming authority for one package's types.
 func (g *Generator) newTypeEmitter(
-	pkg *workspace.Package, owned []*spec.Schema,
+	svc *workspace.Service, owned []*spec.Schema,
 ) *typeEmitter {
 	e := &typeEmitter{
 		ws:     g.ws,
 		mapper: g.mapper,
-		pkg:    pkg,
+		svc:    svc,
 		dedupe: naming.NewDeduper(),
 		synth:  map[*spec.Schema]string{},
 		done:   map[*spec.Schema]bool{},
@@ -489,11 +489,11 @@ func (e *typeEmitter) reference(f *File, s *spec.Schema) (string, error) {
 		)
 	}
 	name := e.ws.GoName(s)
-	if owner.Pkg != nil && owner.Pkg == e.pkg {
+	if owner.Service != nil && owner.Service == e.svc {
 		return name, nil
 	}
 	ownRoot := owner.Root != nil && owner.Root.GoPackage == f.Package
-	if e.pkg == nil && ownRoot {
+	if e.svc == nil && ownRoot {
 		return name, nil
 	}
 	f.ImportAs(owner.ImportPath(), owner.GoPackage())

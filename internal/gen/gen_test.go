@@ -29,7 +29,7 @@ func generate(
 		}
 	}
 
-	cfg, err := config.Load(filepath.Join(dir, "api", "go-api-gen.yaml"))
+	cfg, err := config.Load(filepath.Join(dir, "go-api-gen.yaml"))
 	if err != nil {
 		return nil, err
 	}
@@ -53,15 +53,16 @@ func generate(
 	return out, nil
 }
 
-// oneService is a config with a single package and no shared root.
+// oneService is a config with a single service and no shared root.
 func oneService(spec string) map[string]string {
 	return map[string]string{
-		"api/go-api-gen.yaml": "version: 1\n" +
-			"packages:\n" +
-			"  - spec: api.yaml\n" +
-			"    output: ../gen/api\n" +
+		"go-api-gen.yaml": "version: 1\n" +
+			"services:\n" +
+			"  api:\n" +
+			"    spec: api.yaml\n" +
+			"    to: gen/api\n" +
 			"    generate: [types]\n",
-		"api/api.yaml": spec,
+		"api.yaml": spec,
 	}
 }
 
@@ -266,22 +267,25 @@ func TestOneOfIsRejectedClearly(t *testing.T) {
 // imported by both services and declared by neither.
 func TestSharedTypesAreImportedNotCopied(t *testing.T) {
 	out, err := generate(t, map[string]string{
-		"api/go-api-gen.yaml": `
+		"go-api-gen.yaml": `
 version: 1
-schemas:
-  - path: shared
-    output: ../gen/apitypes
-packages:
-  - spec: billing.yaml
-    output: ../gen/billing
+shared:
+  apitypes:
+    from: schema
+    to: gen/apitypes
+services:
+  billing:
+    spec: billing.yaml
+    to: gen/billing
     generate: [types]
-  - spec: identity.yaml
-    output: ../gen/identity
+  identity:
+    spec: identity.yaml
+    to: gen/identity
     generate: [types]
 `,
-		"api/shared/user.yaml": "components:\n  schemas:\n    User: { type: " +
+		"schema/user.yaml": "components:\n  schemas:\n    User: { type: " +
 			"object, required: [id], properties: { id: { type: string } } }\n",
-		"api/billing.yaml": `
+		"billing.yaml": `
 openapi: 3.1.0
 paths:
   /i:
@@ -299,9 +303,9 @@ components:
       type: object
       required: [payer]
       properties:
-        payer: { $ref: shared/user.yaml#/components/schemas/User }
+        payer: { $ref: schema/user.yaml#/components/schemas/User }
 `,
-		"api/identity.yaml": `
+		"identity.yaml": `
 openapi: 3.1.0
 paths:
   /u:
@@ -312,7 +316,7 @@ paths:
           description: ok
           content:
             application/json:
-              schema: { $ref: shared/user.yaml#/components/schemas/User }
+              schema: { $ref: schema/user.yaml#/components/schemas/User }
 `,
 	})
 	if err != nil {

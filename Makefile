@@ -4,7 +4,7 @@
 GO      ?= go
 GOBIN   := $(CURDIR)/.bin
 LINT    := $(GOBIN)/golangci-lint
-EXAMPLE := examples/monorepo/api/go-api-gen.yaml
+EXAMPLE := examples/monorepo/go-api-gen.yaml
 
 # Keep in step with GOLANGCI_VERSION in .github/workflows/ci.yml, so a local
 # run and a CI run judge the same code the same way.
