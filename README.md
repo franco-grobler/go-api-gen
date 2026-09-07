@@ -49,9 +49,11 @@ schema/
 services/
   billing/
     api.yaml                 the contract
+    service.go               the handlers you write
     internal/api/            generated from it
   identity/
     api.yaml
+    service.go
     internal/api/
 gen/
   apitypes/                  the shared schemas, as one Go package
@@ -335,6 +337,8 @@ Under construction. Working today:
 - [x] Named `shared`/`services` config, with targets implying their
       prerequisites
 - [ ] Selecting one service on the command line: `go-api-gen build billing`
+- [ ] `errors.*` reaching generated code; a binary passes `apierr.Options`
+      itself today
 - [ ] Typed client
 - [ ] Test fakes
 
@@ -398,7 +402,8 @@ would be the same duplication this tool exists to remove from schemas.
 cmd/go-api-gen/     the CLI
 internal/           config, spec loading, ownership, emitters
 runtime/            a separate module: what your services import
-examples/monorepo/  two services sharing a schema root, compiled in CI
+examples/monorepo/  two services sharing a schema root: specs, generated
+                    code, and the handlers you would write. Built in CI.
 ```
 
 ## License
