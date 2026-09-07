@@ -354,6 +354,17 @@ Under construction. Working today:
 
 ## Development
 
+The smallest working setup is `examples/petstore` — one spec, one generated
+package, no shared schema root:
+
+```
+examples/petstore/
+  go-api-gen.yaml
+  api.yaml            the contract
+  service.go          the handlers you write
+  internal/api/       generated from api.yaml
+```
+
 ```console
 $ make            # build, lint, test, and verify generated output
 $ make test       # go test -race -shuffle=on, both modules
@@ -410,9 +421,12 @@ would be the same duplication this tool exists to remove from schemas.
 cmd/go-api-gen/     the CLI
 internal/           config, spec loading, ownership, emitters
 runtime/            a separate module: what your services import
-examples/monorepo/  two services sharing a schema root: specs, generated
-                    code, and the handlers you would write. Built in CI.
+examples/petstore/  the Swagger Petstore: one service, no shared root
+examples/monorepo/  two services sharing a schema root
 ```
+
+Both examples carry the specs, the generated code, and the handlers you would
+write, and both are built and tested in CI.
 
 ## License
 

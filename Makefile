@@ -4,7 +4,8 @@
 GO      ?= go
 GOBIN   := $(CURDIR)/.bin
 LINT    := $(GOBIN)/golangci-lint
-EXAMPLE := examples/monorepo/go-api-gen.yaml
+MONOREPO := examples/monorepo/go-api-gen.yaml
+PETSTORE := examples/petstore/go-api-gen.yaml
 
 # Keep in step with GOLANGCI_VERSION in .github/workflows/ci.yml, so a local
 # run and a CI run judge the same code the same way.
@@ -22,6 +23,8 @@ build:
 test:
 	$(GO) test -race -shuffle=on ./...
 	cd runtime && $(GO) test -race -shuffle=on ./...
+	cd examples/monorepo && $(GO) test -race -shuffle=on ./...
+	cd examples/petstore && $(GO) test -race -shuffle=on ./...
 
 .PHONY: cover
 cover:
@@ -44,20 +47,22 @@ fix: $(LINT)
 
 .PHONY: generate
 generate:
-	$(GO) run ./cmd/go-api-gen build -c $(EXAMPLE)
-	$(GO) run ./cmd/go-api-gen unify -c $(EXAMPLE)
+	$(GO) run ./cmd/go-api-gen build -c $(MONOREPO)
+	$(GO) run ./cmd/go-api-gen unify -c $(MONOREPO)
+	$(GO) run ./cmd/go-api-gen build -c $(PETSTORE)
 
 # Prove the committed output matches the specs and that it compiles. Uses
 # git status rather than git diff so an uncommitted new file is caught too.
 .PHONY: generated
 generated: generate
-	@changed=$$(git status --porcelain -- examples/monorepo); \
+	@changed=$$(git status --porcelain -- examples); \
 	if [ -n "$$changed" ]; then \
 		echo "$$changed"; \
 		echo "Generated output is stale or uncommitted; commit the result."; \
 		exit 1; \
 	fi
 	cd examples/monorepo && $(GO) build ./... && $(GO) vet ./...
+	cd examples/petstore && $(GO) build ./... && $(GO) vet ./...
 
 .PHONY: tidy
 tidy:

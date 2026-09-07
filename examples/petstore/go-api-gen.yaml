@@ -1,0 +1,11 @@
+version: 1
+
+# One service, no shared schema root: the smallest workspace this tool
+# accepts. See ../monorepo for the case a shared root exists to solve.
+services:
+  petstore:
+    spec: api.yaml
+    to: internal/api
+
+errors:
+  type_base_url: https://petstore.example.com/errors/

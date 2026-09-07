@@ -128,12 +128,13 @@ jobs:
         run: |
           go run ./cmd/go-api-gen build -c examples/monorepo/go-api-gen.yaml
           go run ./cmd/go-api-gen unify -c examples/monorepo/go-api-gen.yaml
+          go run ./cmd/go-api-gen build -c examples/petstore/go-api-gen.yaml
 
       # git status, not git diff: diff only inspects tracked files, so a
       # generated file that was never committed would otherwise slip through.
       - name: Check for drift
         run: |
-          changed=$(git status --porcelain -- examples/monorepo)
+          changed=$(git status --porcelain -- examples)
           if [ -n "$changed" ]; then
             echo "$changed"
             echo "::error::Generated output is stale or uncommitted."
@@ -142,7 +143,11 @@ jobs:
           fi
 
       # The drift gate only proves the bytes match. Generated Go also has to
-      # compile: output that parses but does not build would pass every other
-      # check here.
-      - name: Compile the generated example
-        run: cd examples/monorepo && go build ./... && go vet ./...
+      # compile, and the examples' own tests are the only place the generated
+      # server is exercised against a hand-written handler.
+      - name: Compile and test the examples
+        run: |
+          (cd examples/monorepo && go build ./... && go vet ./... \
+            && go test -race -shuffle=on ./...)
+          (cd examples/petstore && go build ./... && go vet ./... \
+            && go test -race -shuffle=on ./...)
