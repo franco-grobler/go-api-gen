@@ -1,0 +1,28 @@
+components:
+  schemas:
+    User:
+      description: A person or machine identity known to the platform.
+      type: object
+      required: [id, email, status]
+      properties:
+        id:
+          type: string
+          # No format mapping is configured here, so this stays a Go string.
+          # ../monorepo maps uuid onto uuid.UUID instead; the choice is the
+          # workspace's, not the schema's.
+          format: uuid
+          minLength: 1
+        email:
+          type: string
+          format: email
+          minLength: 3
+          maxLength: 254
+        display_name:
+          description: Shown in the UI; absent when the user has not set one.
+          type: [string, "null"]
+        status:
+          $ref: '#/components/schemas/UserStatus'
+
+    UserStatus:
+      type: string
+      enum: [active, suspended]

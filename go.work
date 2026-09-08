@@ -4,6 +4,9 @@ go 1.24
 // code, which is the only check that proves the emitters produce valid Go.
 use (
 	.
+	./examples/microservices/billing
+	./examples/microservices/identity
+	./examples/microservices/schema
 	./examples/monorepo
 	./examples/petstore
 	./runtime

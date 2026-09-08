@@ -129,6 +129,8 @@ jobs:
           go run ./cmd/go-api-gen build -c examples/monorepo/go-api-gen.yaml
           go run ./cmd/go-api-gen unify -c examples/monorepo/go-api-gen.yaml
           go run ./cmd/go-api-gen build -c examples/petstore/go-api-gen.yaml
+          go run ./cmd/go-api-gen build -c examples/microservices/go-api-gen.yaml
+          go run ./cmd/go-api-gen unify -c examples/microservices/go-api-gen.yaml
 
       # git status, not git diff: diff only inspects tracked files, so a
       # generated file that was never committed would otherwise slip through.
@@ -147,7 +149,12 @@ jobs:
       # server is exercised against a hand-written handler.
       - name: Compile and test the examples
         run: |
-          (cd examples/monorepo && go build ./... && go vet ./... \
-            && go test -race -shuffle=on ./...)
-          (cd examples/petstore && go build ./... && go vet ./... \
-            && go test -race -shuffle=on ./...)
+          for m in examples/microservices/schema \
+                   examples/microservices/identity \
+                   examples/microservices/billing \
+                   examples/monorepo \
+                   examples/petstore; do
+            echo "--- $m"
+            (cd "$m" && go build ./... && go vet ./... \
+              && go test -race -shuffle=on ./...) || exit 1
+          done

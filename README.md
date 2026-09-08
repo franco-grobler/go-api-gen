@@ -367,6 +367,28 @@ examples/petstore/
   internal/api/       generated from api.yaml
 ```
 
+`examples/microservices` is the other end: two services that are built and
+deployed separately, with the shared schema a third module they both require.
+One configuration governs all three, because the contract is platform-wide
+even when the code is not — each output directory resolves its import path
+against whichever `go.mod` encloses it.
+
+```
+examples/microservices/
+  go-api-gen.yaml     one config, three modules
+  openapi.yaml        the platform document, owned by no service
+  schema/             module: the contract
+    openapi/*.yaml
+    apitypes/         generated, and required by both services below
+  identity/           module: its own binary, requires schema
+  billing/            module: its own binary, requires schema
+```
+
+`billing.Invoice.Payer` is `apitypes.User` — the type from the other module,
+not a copy of it. Billing's tests marshal an `apitypes.User`, post it, and
+decode the reply back into one, which is the round trip a caller makes across
+the network with no conversion type in between.
+
 ```console
 $ make            # build, lint, test, and verify generated output
 $ make test       # go test -race -shuffle=on, both modules
@@ -420,15 +442,16 @@ would be the same duplication this tool exists to remove from schemas.
 ## Layout
 
 ```
-cmd/go-api-gen/     the CLI
-internal/           config, spec loading, ownership, emitters
-runtime/            a separate module: what your services import
-examples/petstore/  the Swagger Petstore: one service, no shared root
-examples/monorepo/  two services sharing a schema root
+cmd/go-api-gen/          the CLI
+internal/                config, spec loading, ownership, emitters
+runtime/                 a separate module: what your services import
+examples/petstore/       one service, no shared root
+examples/monorepo/       two services in one module, sharing a schema root
+examples/microservices/  the same two, as three separately built modules
 ```
 
-Both examples carry the specs, the generated code, and the handlers you would
-write, and both are built and tested in CI.
+Each example carries the specs, the generated code, and the handlers you would
+write, and all three are built and tested in CI.
 
 ## License
 

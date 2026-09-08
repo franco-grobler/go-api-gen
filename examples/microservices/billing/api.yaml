@@ -1,0 +1,60 @@
+openapi: 3.1.0
+info:
+  title: Billing
+  version: "1.0.0"
+  description: What the platform charges for.
+paths:
+  /invoices:
+    get:
+      summary: List every invoice
+      operationId: listInvoices
+      responses:
+        "200":
+          description: The invoices.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invoice'
+    post:
+      summary: Raise an invoice
+      operationId: createInvoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInvoice'
+      responses:
+        "201":
+          description: The raised invoice.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+components:
+  schemas:
+    Invoice:
+      type: object
+      required: [id, payer, total]
+      properties:
+        id: { type: string }
+        payer:
+          $ref: ../schema/openapi/user.yaml#/components/schemas/User
+        total:
+          $ref: ../schema/openapi/money.yaml#/components/schemas/Money
+
+    CreateInvoice:
+      description: >
+        The payer is sent whole rather than by id: billing keeps a snapshot of
+        who was invoiced, and the caller has just fetched that user from
+        identity. It is also what makes the shared type observable at runtime,
+        since identity marshalled the value billing is about to decode.
+      type: object
+      required: [payer, total]
+      properties:
+        payer:
+          $ref: ../schema/openapi/user.yaml#/components/schemas/User
+        total:
+          $ref: ../schema/openapi/money.yaml#/components/schemas/Money

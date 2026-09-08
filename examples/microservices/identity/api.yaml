@@ -1,0 +1,22 @@
+openapi: 3.1.0
+info:
+  title: Identity
+  version: "1.0.0"
+  description: Who the platform knows about.
+paths:
+  /users/{userId}:
+    get:
+      summary: Fetch one user
+      operationId: getUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: ../schema/openapi/user.yaml#/components/schemas/User

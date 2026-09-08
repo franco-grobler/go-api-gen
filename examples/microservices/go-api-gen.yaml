@@ -1,0 +1,30 @@
+version: 1
+
+# One configuration governs three Go modules. The contract is platform-wide
+# even though the code that serves it is not: every output directory resolves
+# its import path against whichever go.mod actually encloses it.
+shared:
+  apitypes:
+    from: schema/openapi
+    to: schema/apitypes
+
+services:
+  billing:
+    spec: billing/api.yaml
+    to: billing/internal/api
+  identity:
+    spec: identity/api.yaml
+    to: identity/internal/api
+
+errors:
+  type_base_url: https://errors.example.com/
+
+# The platform document, owned by no service, for a gateway or a docs portal.
+unified:
+  to: openapi.yaml
+  title: Example Platform API
+  version: "1.0.0"
+  description: Every public endpoint across the Example services.
+  servers:
+    - url: https://api.example.com
+      description: Production
