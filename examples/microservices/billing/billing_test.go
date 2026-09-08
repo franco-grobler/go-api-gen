@@ -1,4 +1,4 @@
-package main
+package billing_test
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/example/microservices/billing"
 	"github.com/example/microservices/billing/internal/api"
 	"github.com/example/microservices/schema/apitypes"
 )
@@ -64,8 +65,8 @@ func body(t *testing.T, payer apitypes.User, currency string) []byte {
 }
 
 func TestCreateInvoiceRoundTripsTheSharedUser(t *testing.T) {
-	svc := newService()
-	status, out := post(t, newServer(svc), body(t, ada(), "GBP"))
+	svc := billing.New()
+	status, out := post(t, billing.NewServer(svc), body(t, ada(), "GBP"))
 	if status != http.StatusCreated {
 		t.Fatalf("status = %d, want 201: %s", status, out)
 	}
@@ -81,8 +82,8 @@ func TestCreateInvoiceRoundTripsTheSharedUser(t *testing.T) {
 		t.Errorf("status = %q, want the shared constant",
 			invoice.Payer.Status)
 	}
-	if len(svc.invoices) != 1 {
-		t.Errorf("the service holds %d invoices, want 1", len(svc.invoices))
+	if svc.Count() != 1 {
+		t.Errorf("the service holds %d invoices, want 1", svc.Count())
 	}
 }
 
@@ -114,8 +115,8 @@ func TestSharedConstraintsAreEnforcedHere(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := newService()
-			status, out := post(t, newServer(svc), tt.body)
+			svc := billing.New()
+			status, out := post(t, billing.NewServer(svc), tt.body)
 			if status != http.StatusUnprocessableEntity {
 				t.Fatalf("status = %d, want 422: %s", status, out)
 			}
@@ -123,7 +124,7 @@ func TestSharedConstraintsAreEnforcedHere(t *testing.T) {
 				strings.Join(tt.want, ", ") {
 				t.Errorf("errors = %v, want %v", got, tt.want)
 			}
-			if len(svc.invoices) != 0 {
+			if svc.Count() != 0 {
 				t.Error("an invalid request reached the handler")
 			}
 		})
@@ -136,7 +137,7 @@ func TestInactivePayerIsRejected(t *testing.T) {
 	payer := ada()
 	payer.Status = apitypes.UserStatusSuspended
 
-	status, out := post(t, newServer(newService()), body(t, payer, "GBP"))
+	status, out := post(t, billing.NewServer(billing.New()), body(t, payer, "GBP"))
 	if status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422: %s", status, out)
 	}
@@ -150,7 +151,7 @@ func TestInactivePayerIsRejected(t *testing.T) {
 // The missing-field rule holds across the module boundary: an absent required
 // object is reported once, not walked as a zero value.
 func TestMissingFieldsAreReportedOnce(t *testing.T) {
-	status, out := post(t, newServer(newService()), []byte(`{}`))
+	status, out := post(t, billing.NewServer(billing.New()), []byte(`{}`))
 	if status != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422: %s", status, out)
 	}
@@ -163,8 +164,8 @@ func TestMissingFieldsAreReportedOnce(t *testing.T) {
 }
 
 func TestListInvoices(t *testing.T) {
-	svc := newService()
-	srv := newServer(svc)
+	svc := billing.New()
+	srv := billing.NewServer(svc)
 	if status, out := post(t, srv, body(t, ada(), "GBP")); status !=
 		http.StatusCreated {
 		t.Fatalf("seeding failed with %d: %s", status, out)

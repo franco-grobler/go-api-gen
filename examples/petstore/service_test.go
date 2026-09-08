@@ -16,9 +16,9 @@ import (
 // serve returns the real store behind the generated server. Nothing here is a
 // test double: what these tests check is what the generated layer does before
 // Store is reached.
-func serve() (*petstore.Store, http.Handler) {
-	store := petstore.New()
-	return store, petstore.NewServer(store)
+func serve() (*petstore.Service, http.Handler) {
+	svc := petstore.New()
+	return svc, petstore.NewServer(svc)
 }
 
 type result struct {
@@ -166,7 +166,7 @@ func TestSchemaViolations(t *testing.T) {
 			if strings.Join(got, ", ") != strings.Join(tt.want, ", ") {
 				t.Errorf("errors = %v, want %v", got, tt.want)
 			}
-			if n := len(store.Pets()); n != 0 {
+			if n := store.Count(); n != 0 {
 				t.Errorf("an invalid request reached the store: %d pets", n)
 			}
 		})

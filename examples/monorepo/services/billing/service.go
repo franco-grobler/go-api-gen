@@ -9,7 +9,6 @@ package billing
 import (
 	"context"
 	"net/http"
-	"sync"
 
 	"github.com/google/uuid"
 
@@ -25,31 +24,23 @@ import (
 // handler applies it.
 const defaultLimit = 25
 
-// Service is the billing service's implementation of the generated handler
-// interface.
+// Service implements the generated handler interface over a store.
 type Service struct {
-	mu       sync.Mutex
-	invoices []api.Invoice
-
-	// payers is billing's view of who may be invoiced. The value is
-	// apitypes.User: the same Go type the identity service serves, not a
-	// structurally identical copy of it.
-	payers map[uuid.UUID]apitypes.User
+	db *store
 }
 
 // The generated interface is the contract. Asserting it here turns a spec
-// change that alters a signature into a compile error in this file, rather
-// than a route that quietly stops being served.
+// change that alters a signature into a compile error in this file.
 var _ api.Handler = (*Service)(nil)
 
 // New returns a Service that will invoice the given payers.
 func New(payers ...apitypes.User) *Service {
-	s := &Service{payers: make(map[uuid.UUID]apitypes.User, len(payers))}
-	for _, p := range payers {
-		s.payers[p.ID] = p
-	}
-	return s
+	return &Service{db: newStore(payers)}
 }
+
+// WithMiddleware wraps every route, outermost first. It is re-exported so a
+// main package can add middleware without importing internal/api.
+var WithMiddleware = api.WithMiddleware
 
 // NewServer returns the billing service as an http.Handler: the generated
 // routing, decoding and validation in front, Service behind.
@@ -62,11 +53,7 @@ func NewServer(s *Service, opts ...api.ServerOption) http.Handler {
 }
 
 // Invoices returns every invoice created so far, oldest first.
-func (s *Service) Invoices() []api.Invoice {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]api.Invoice(nil), s.invoices...)
-}
+func (s *Service) Invoices() []api.Invoice { return s.db.all() }
 
 // ListInvoices returns one page of invoices.
 //
@@ -77,26 +64,12 @@ func (s *Service) Invoices() []api.Invoice {
 func (s *Service) ListInvoices(
 	_ context.Context, req api.ListInvoicesRequest,
 ) (*api.ListInvoicesResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	items, next := s.db.after(
+		req.Query.Cursor.Or(""), req.Query.Limit.Or(defaultLimit))
 
-	from := 0
-	if cursor, ok := req.Query.Cursor.Get(); ok {
-		// The cursor is opaque to the client, not to us: it is the ID of the
-		// last invoice on the page before this one.
-		for i, inv := range s.invoices {
-			if inv.ID.String() == cursor {
-				from = i + 1
-				break
-			}
-		}
-	}
-
-	page := apitypes.PageInfo{Total: len(s.invoices)}
-	items := append([]api.Invoice(nil), s.invoices[from:]...)
-	if limit := req.Query.Limit.Or(defaultLimit); len(items) > limit {
-		items = items[:limit]
-		page.NextCursor = optional.Some(items[limit-1].ID.String())
+	page := apitypes.PageInfo{Total: s.db.count()}
+	if next != "" {
+		page.NextCursor = optional.Some(next)
 	}
 	return &api.ListInvoicesResponse{Items: items, Page: page}, nil
 }
@@ -109,10 +82,7 @@ func (s *Service) ListInvoices(
 func (s *Service) CreateInvoice(
 	_ context.Context, req api.CreateInvoiceRequest,
 ) (*api.Invoice, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	payer, ok := s.payers[req.Body.PayerID]
+	payer, ok := s.db.payer(req.Body.PayerID)
 	if !ok {
 		// The same builder the generated validation uses, so a rule that
 		// needed a lookup is indistinguishable, in the response, from one the
@@ -128,6 +98,6 @@ func (s *Service) CreateInvoice(
 		Total:  req.Body.Total,
 		Status: api.InvoiceStatusDraft,
 	}
-	s.invoices = append(s.invoices, invoice)
+	s.db.add(invoice)
 	return &invoice, nil
 }

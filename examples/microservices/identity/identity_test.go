@@ -1,4 +1,4 @@
-package main
+package identity_test
 
 import (
 	"encoding/json"
@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/example/microservices/identity/internal/api"
+	"github.com/example/microservices/identity"
 	"github.com/example/microservices/schema/apitypes"
 )
 
@@ -26,7 +26,7 @@ func get(t *testing.T, target string) (int, []byte) {
 	r := httptest.NewRequestWithContext(
 		t.Context(), http.MethodGet, target, http.NoBody)
 	rec := httptest.NewRecorder()
-	newServer(newService(ada())).ServeHTTP(rec, r)
+	identity.NewServer(identity.New(ada())).ServeHTTP(rec, r)
 
 	res := rec.Result()
 	defer res.Body.Close()
@@ -80,7 +80,7 @@ func TestUnknownUserIsNotFound(t *testing.T) {
 	if err := json.Unmarshal(body, &problem); err != nil {
 		t.Fatal(err)
 	}
-	wantType := api.DefaultErrorOptions().TypeBaseURL + "not_found"
+	wantType := identity.ErrorTypeBaseURL + "not_found"
 	if problem["type"] != wantType {
 		t.Errorf("type = %v, want %q", problem["type"], wantType)
 	}
@@ -92,5 +92,11 @@ func TestMissingIDIsNotRouted(t *testing.T) {
 	status, _ := get(t, "/users/")
 	if status != http.StatusNotFound {
 		t.Errorf("GET /users/ = %d, want 404", status)
+	}
+}
+
+func TestSeededStore(t *testing.T) {
+	if n := identity.New(ada()).Count(); n != 1 {
+		t.Errorf("Count() = %d, want 1", n)
 	}
 }

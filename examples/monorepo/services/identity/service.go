@@ -7,32 +7,27 @@ package identity
 import (
 	"context"
 	"net/http"
-	"sync"
-
-	"github.com/google/uuid"
 
 	"github.com/acme/monorepo/gen/apitypes"
 	"github.com/acme/monorepo/services/identity/internal/api"
 	"github.com/franco-grobler/go-api-gen/runtime/apierr"
 )
 
-// Service is the identity service's implementation of the generated handler
-// interface.
+// Service implements the generated handler interface over a store.
 type Service struct {
-	mu    sync.RWMutex
-	users map[uuid.UUID]apitypes.User
+	db *store
 }
 
 var _ api.Handler = (*Service)(nil)
 
 // New returns a Service serving the given users.
 func New(users ...apitypes.User) *Service {
-	s := &Service{users: make(map[uuid.UUID]apitypes.User, len(users))}
-	for _, u := range users {
-		s.users[u.ID] = u
-	}
-	return s
+	return &Service{db: newStore(users)}
 }
+
+// WithMiddleware wraps every route, outermost first. It is re-exported so a
+// main package can add middleware without importing internal/api.
+var WithMiddleware = api.WithMiddleware
 
 // NewServer returns the identity service as an http.Handler. The errors block
 // of go-api-gen.yaml is applied by the generated NewServer.
@@ -49,10 +44,7 @@ func NewServer(s *Service, opts ...api.ServerOption) http.Handler {
 func (s *Service) GetUser(
 	_ context.Context, req api.GetUserRequest,
 ) (*apitypes.User, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	user, ok := s.users[req.Path.UserID]
+	user, ok := s.db.get(req.Path.UserID)
 	if !ok {
 		return nil, apierr.NotFound("user", req.Path.UserID)
 	}
