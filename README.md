@@ -420,12 +420,15 @@ under `cmd/`, and `internal/platform` holding the listener and shutdown that
 both share — which is the plainest thing a monorepo buys, and the reason the
 microservices example carries a copy per module instead.
 
+Recipes live in a [justfile](https://just.systems); `just --list` prints them.
+
 ```console
-$ make            # build, lint, test, and verify generated output
-$ make test       # go test -race -shuffle=on, both modules
-$ make lint       # golangci-lint, both modules
-$ make generate   # regenerate the example monorepo
-$ make fix        # apply the linter's automatic fixes
+$ just            # build, lint, test, and verify generated output
+$ just test       # go test -race -shuffle=on, every module
+$ just lint       # golangci-lint, the generator and the runtime
+$ just generate   # regenerate every example
+$ just tidy       # go mod tidy, every module, against its own requirements
+$ just fix        # apply the linter's automatic fixes
 ```
 
 CI runs four jobs: build and test (`-race -shuffle=on`, with coverage), lint,
@@ -441,8 +444,10 @@ with its reason in `.golangci.yml`: `govet`'s `shadow`, `staticcheck`'s ST1005
 the fix), and `gosec`'s G304 (reading files the user names is what a generator
 does).
 
-The linter version is pinned in both `Makefile` and `.github/workflows/ci.yml`;
-keep them in step.
+The linter version is pinned in both `justfile` and
+`.github/workflows/ci.yml`; keep them in step. `just lint` reinstalls into
+`.bin` when the pinned version and the installed one disagree, so a bump takes
+effect without a manual `just clean`.
 
 ## The runtime module
 

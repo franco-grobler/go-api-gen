@@ -105,7 +105,7 @@ jobs:
           changed=$(git status --porcelain -- '*go.mod' '*go.sum')
           if [ -n "$changed" ]; then
             echo "$changed"
-            echo "::error::Modules are not tidy. Run 'make tidy' and commit."
+            echo "::error::Modules are not tidy. Run 'just tidy' and commit."
             exit 1
           fi
 
@@ -140,7 +140,7 @@ jobs:
           if [ -n "$changed" ]; then
             echo "$changed"
             echo "::error::Generated output is stale or uncommitted."
-            echo "Run 'make generate' and commit the result."
+            echo "Run 'just generate' and commit the result."
             exit 1
           fi
 

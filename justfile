@@ -1,0 +1,120 @@
+# Development entry points. CI runs the same commands; see
+# .github/workflows/ci.yml.
+
+go := env('GO', 'go')
+gobin := justfile_directory() / '.bin'
+lint := gobin / 'golangci-lint'
+
+monorepo := 'examples/monorepo/go-api-gen.yaml'
+petstore := 'examples/petstore/go-api-gen.yaml'
+micro := 'examples/microservices/go-api-gen.yaml'
+
+# Every module under examples/, which is more than one per example: the
+# microservices example is three, which is the point of it. One per line to
+# read, flattened to a single word list so a shell `for` can
+# take it: a triple-quoted string keeps its newlines.
+example_modules := replace('''
+examples/microservices/schema
+examples/microservices/identity
+examples/microservices/billing
+examples/monorepo
+examples/petstore
+''', "\n", " ")
+
+# Keep in step with GOLANGCI_VERSION in .github/workflows/ci.yml, so a local
+# run and a CI run judge the same code the same way.
+lint_version := 'v2.13.2'
+
+# Build, lint, test, and verify generated output.
+all: build lint test generated
+
+# Compile the generator and the runtime module.
+build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ go }} build ./...
+    (cd runtime && {{ go }} build ./...)
+
+# Test every module, with the race detector and a shuffled order.
+test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ go }} test -race -shuffle=on ./...
+    (cd runtime && {{ go }} test -race -shuffle=on ./...)
+    for m in {{ example_modules }}; do
+        echo "{{ go }} test ($m)"
+        (cd "$m" && {{ go }} test -race -shuffle=on ./...)
+    done
+
+# Report coverage of the generator.
+cover:
+    {{ go }} test -covermode=atomic -coverprofile=coverage.out ./...
+    {{ go }} tool cover -func=coverage.out | tail -1
+
+# Install the pinned linter into .bin, unless it is already the right version.
+[private]
+lint-bin:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    want={{ trim_start_match(lint_version, 'v') }}
+    if [ -x "{{ lint }}" ] &&
+        "{{ lint }}" version 2>/dev/null | grep -qF "$want"; then
+        exit 0
+    fi
+    GOBIN="{{ gobin }}" {{ go }} install \
+        github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{ lint_version }}
+
+# Lint the generator and the runtime module.
+lint: lint-bin
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ lint }} run
+    (cd runtime && {{ lint }} run --config=../.golangci.yml)
+
+# Apply the linter's automatic fixes.
+fix: lint-bin
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ lint }} run --fix
+    (cd runtime && {{ lint }} run --fix --config=../.golangci.yml)
+
+# Regenerate every example.
+generate:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ go }} run ./cmd/go-api-gen build -c {{ monorepo }}
+    {{ go }} run ./cmd/go-api-gen unify -c {{ monorepo }}
+    {{ go }} run ./cmd/go-api-gen build -c {{ petstore }}
+    {{ go }} run ./cmd/go-api-gen build -c {{ micro }}
+    {{ go }} run ./cmd/go-api-gen unify -c {{ micro }}
+
+# Prove the committed output matches the specs and that it compiles.
+generated: generate
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # git status rather than git diff: diff only inspects tracked files, so a
+    # generated file that was never committed would otherwise slip through.
+    changed=$(git status --porcelain -- examples)
+    if [ -n "$changed" ]; then
+        echo "$changed"
+        echo "Generated output is stale or uncommitted; commit the result."
+        exit 1
+    fi
+    for m in {{ example_modules }}; do
+        echo "{{ go }} build and vet ($m)"
+        (cd "$m" && {{ go }} build ./... && {{ go }} vet ./...)
+    done
+
+# Tidy every module against its own requirements, not the workspace's.
+tidy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ go }} mod tidy
+    (cd runtime && {{ go }} mod tidy)
+    for m in {{ example_modules }}; do
+        (cd "$m" && GOWORK=off {{ go }} mod tidy)
+    done
+
+# Remove the installed linter and the coverage profile.
+clean:
+    rm -rf {{ gobin }} coverage.out
