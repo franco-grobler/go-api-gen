@@ -45,6 +45,10 @@ type Problem struct {
 	// Extra members are flattened into the top-level object on marshal, which
 	// is how RFC 9457 extends a problem document.
 	Extra map[string]any `json:"-"`
+
+	// headers are response headers the problem is sent with, set through
+	// WithHeader. They are not members of the document.
+	headers map[string]string
 }
 
 // Error implements error.
@@ -111,11 +115,27 @@ func (p *Problem) Write(w http.ResponseWriter) error {
 	if err != nil {
 		return err
 	}
+	for key, value := range p.headers {
+		w.Header().Set(key, value)
+	}
 	w.Header().Set("Content-Type", ContentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(p.StatusCode())
 	_, err = w.Write(body)
 	return err
+}
+
+// WithHeader attaches a response header the problem must be sent with.
+//
+// A 401 is the reason this exists: RFC 9110 requires it to carry a
+// WWW-Authenticate challenge, and a client given no challenge cannot know what
+// to send instead. The headers are not part of the JSON body.
+func (p *Problem) WithHeader(key, value string) *Problem {
+	if p.headers == nil {
+		p.headers = map[string]string{}
+	}
+	p.headers[key] = value
+	return p
 }
 
 // WithExtra attaches an extension member.
