@@ -417,6 +417,16 @@ Under construction. Working today:
 
 `oneOf`/`anyOf` are rejected with a clear error rather than generated badly.
 
+Two validation gaps are **silent** — the constraint is accepted by the parser
+and never applied, so the generated server lets the value through. Do not rely
+on either until this says otherwise:
+
+- Constraints on properties declared inside an inline `allOf` member
+  (`allOf: [$ref …, {type: object, properties: …}]`). The fields are generated;
+  their `minLength`, ranges and enums are not checked.
+- `multipleOf`, `uniqueItems`, `const`, `minProperties`, `maxProperties`, and
+  `additionalProperties: false`, which does not reject unknown fields.
+
 ## Development
 
 All three examples are runnable programs, not snippets. Each has a binary
