@@ -36,9 +36,15 @@ func (s *Service) Count() int { return s.db.count() }
 var WithMiddleware = api.WithMiddleware
 
 // NewServer returns the service as an http.Handler: the generated routing,
-// decoding and validation in front, Service behind.
-func NewServer(s *Service, opts ...api.ServerOption) http.Handler {
-	return api.NewServer(s, opts...)
+// authentication, decoding and validation in front, Service behind.
+//
+// The authenticator is a parameter because api.yaml declares security. A
+// server that could be built without one would route requests nobody had
+// checked, so the generator does not offer that.
+func NewServer(
+	s *Service, a api.Authenticator, opts ...api.ServerOption,
+) http.Handler {
+	return api.NewServer(s, a, opts...)
 }
 
 // ErrorTypeBaseURL is the RFC 9457 type prefix this service was generated
@@ -50,9 +56,23 @@ var ErrorTypeBaseURL = api.DefaultErrorOptions().TypeBaseURL
 // The return type is apitypes.User, from the shared module. Identity does not
 // declare a User of its own and then convert: there is one User on the
 // platform, and this is it.
+//
+// ctx is the context the authenticator returned, which is how the caller's
+// identity gets here. Who the caller is was authentication's job; whether they
+// may read this user is this function's, and no specification could state it.
 func (s *Service) GetUser(
-	_ context.Context, req api.GetUserRequest,
+	ctx context.Context, req api.GetUserRequest,
 ) (*apitypes.User, error) {
+	caller, ok := Caller(ctx)
+	if !ok {
+		// Unreachable while the spec requires a token, and a 500 rather than a
+		// silent read if that ever stops being true.
+		return nil, apierr.Internal()
+	}
+	if caller != req.Path.UserID {
+		return nil, apierr.Forbidden("you may only read your own user")
+	}
+
 	user, ok := s.db.get(req.Path.UserID)
 	if !ok {
 		return nil, apierr.NotFound("user", req.Path.UserID)

@@ -39,6 +39,80 @@ type GetUserPathParams struct {
 	UserID string
 }
 
+// Authenticator verifies the credentials this specification declares.
+//
+// The server finds each credential where the specification says it lives and
+// calls the matching method before any handler runs. Returning a context is
+// how the caller's identity reaches the handler: whatever a method returns
+// becomes the ctx the handler is given.
+//
+// Returning an error refuses the request. An *apierr.Problem is rendered as
+// it stands, so a method that wants a 403 rather than a 401 says so;
+// anything else becomes a 401.
+type Authenticator interface {
+	// BearerAuth verifies the bearer token from the Authorization header.
+	//
+	// A token issued by whatever signs tokens here.
+	BearerAuth(ctx context.Context, r *http.Request, token string) (context.Context, error)
+}
+
+// authStep is one scheme within a requirement, together with the scopes the
+// operation asks of it.
+type authStep struct {
+	verify func(Authenticator, context.Context, *http.Request, []string) (context.Context, error)
+	scopes []string
+}
+
+// authAll satisfies one requirement: every step in it, in order, each handed
+// the context the step before returned. A requirement is an AND, so the
+// first refusal ends it.
+func authAll(a Authenticator, r *http.Request, steps ...authStep) (context.Context, error) {
+	ctx := r.Context()
+	for _, step := range steps {
+		next, err := step.verify(a, ctx, r, step.scopes)
+		if err != nil {
+			return nil, err
+		}
+		ctx = next
+	}
+	return ctx, nil
+}
+
+// authMissing reports a credential that never arrived. RFC 9110 requires a
+// 401 to carry a challenge naming what the client should send instead, so a
+// scheme that defines one sends it.
+func authMissing(scheme, challenge string) error {
+	p := apierr.Unauthorized("no credentials for %s", scheme).
+		WithExtra("scheme", scheme)
+	if challenge != "" {
+		p = p.WithHeader("WWW-Authenticate", challenge)
+	}
+	return p
+}
+
+// authBearerAuth reads the credential bearerAuth declares and verifies it.
+func authBearerAuth(a Authenticator, ctx context.Context, r *http.Request, scopes []string) (context.Context, error) {
+	token, ok := httpx.BearerToken(r)
+	if !ok {
+		return nil, authMissing("bearerAuth", "Bearer")
+	}
+	return a.BearerAuth(ctx, r, token)
+}
+
+// authorizeGetUser applies the security getUser declares: bearerAuth.
+func authorizeGetUser(a Authenticator, r *http.Request) (context.Context, error) {
+	var failed error
+
+	// bearerAuth
+	if ctx, err := authAll(a, r, authStep{authBearerAuth, nil}); err == nil {
+		return ctx, nil
+	} else if failed == nil {
+		failed = err
+	}
+
+	return nil, failed
+}
+
 // ServerOption configures the generated server.
 //
 // The option constructors live in httpx, since they are the same for every
@@ -67,9 +141,14 @@ func DefaultErrorOptions() apierr.Options {
 
 // NewServer returns an http.Handler serving every operation in the
 // specification.
-func NewServer(h Handler, opts ...ServerOption) http.Handler {
+//
+// The Authenticator is a parameter rather than an option because the
+// specification declares security: a server built without one would route
+// requests nobody had checked, and that is not a mistake worth leaving until
+// runtime.
+func NewServer(h Handler, a Authenticator, opts ...ServerOption) http.Handler {
 	mux := http.NewServeMux()
-	register(mux, h)
+	register(mux, h, a)
 	all := append(
 		[]ServerOption{WithErrorOptions(DefaultErrorOptions())},
 		opts...,
@@ -80,16 +159,23 @@ func NewServer(h Handler, opts ...ServerOption) http.Handler {
 // Register adds every route to an existing mux, for a service that owns its
 // own router. The caller is then responsible for installing
 // apierr.Middleware, which DefaultErrorOptions configures.
-func Register(mux *http.ServeMux, h Handler) {
-	register(mux, h)
+func Register(mux *http.ServeMux, h Handler, a Authenticator) {
+	register(mux, h, a)
 }
 
-func register(mux *http.ServeMux, h Handler) {
-	mux.Handle("GET /users/{userId}", handleGetUser(h))
+func register(mux *http.ServeMux, h Handler, a Authenticator) {
+	mux.Handle("GET /users/{userId}", handleGetUser(h, a))
 }
 
-func handleGetUser(h Handler) http.Handler {
+func handleGetUser(h Handler, a Authenticator) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, err := authorizeGetUser(a, r)
+		if err != nil {
+			apierr.Fail(r, err)
+			return
+		}
+		r = r.WithContext(ctx)
+
 		req := GetUserRequest{Raw: r}
 		v := validate.New()
 		if raw := r.PathValue("userId"); raw != "" {
@@ -105,7 +191,8 @@ func handleGetUser(h Handler) http.Handler {
 			return
 		}
 
-		result, err := h.GetUser(r.Context(), req)
+		var result *apitypes.User
+		result, err = h.GetUser(r.Context(), req)
 		if err != nil {
 			apierr.Fail(r, err)
 			return

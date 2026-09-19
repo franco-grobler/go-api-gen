@@ -3,6 +3,12 @@ info:
   title: Identity
   version: "1.0.0"
   description: Who the platform knows about.
+
+# Every operation needs a bearer token unless it says otherwise. The generator
+# reads the token out of the Authorization header and hands it to code you
+# write; what a token means is not something a specification can say.
+security:
+  - bearerAuth: []
 paths:
   /users/{userId}:
     get:
@@ -20,3 +26,15 @@ paths:
             application/json:
               schema:
                 $ref: ../schema/openapi/user.yaml#/components/schemas/User
+        "401":
+          description: The token was missing or not accepted.
+        "403":
+          description: The caller may not read this user.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: A token issued by whatever signs tokens here.

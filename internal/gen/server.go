@@ -22,6 +22,7 @@ type serverEmitter struct {
 
 	validatePkg string
 	apierrPkg   string
+	schemes     []*spec.SecurityScheme
 	httpxPkg    string
 	httpPkg     string
 	ctxPkg      string
@@ -53,6 +54,7 @@ func (g *Generator) EmitServer(
 	e.apierrPkg = file.Import(APIErrImport)
 	e.validatePkg = file.Import(ValidateImport)
 	e.httpxPkg = file.Import(HTTPXImport)
+	e.schemes = e.usedSchemes()
 
 	ops, err := e.operations()
 	if err != nil {
@@ -64,6 +66,7 @@ func (g *Generator) EmitServer(
 
 	e.handlerInterface(ops)
 	e.requestTypes(ops)
+	e.security(ops)
 	e.router(ops)
 	for _, op := range ops {
 		if err := e.handler(op); err != nil {
@@ -228,10 +231,17 @@ func (e *serverEmitter) router(ops []*operation) {
 
 	e.file.Comment("NewServer returns an http.Handler serving every " +
 		"operation in the specification.")
-	e.file.P("func NewServer(h Handler, opts ...ServerOption) %s.Handler {",
-		e.httpPkg)
+	if e.secured() {
+		e.file.Comment("")
+		e.file.Comment("The Authenticator is a parameter rather than an " +
+			"option because the specification declares security: a server " +
+			"built without one would route requests nobody had checked, and " +
+			"that is not a mistake worth leaving until runtime.")
+	}
+	e.file.P("func NewServer(h Handler%s, opts ...ServerOption) %s.Handler {",
+		e.authParam(), e.httpPkg)
 	e.file.P("\tmux := %s.NewServeMux()", e.httpPkg)
-	e.file.P("\tregister(mux, h)")
+	e.file.P("\tregister(mux, h%s)", e.authArg())
 	e.file.P("\tall := append(")
 	e.file.P("\t\t[]ServerOption{WithErrorOptions(DefaultErrorOptions())},")
 	e.file.P("\t\topts...,")
@@ -244,20 +254,20 @@ func (e *serverEmitter) router(ops []*operation) {
 		"service that owns its own router. The caller is then responsible " +
 		"for installing apierr.Middleware, which DefaultErrorOptions " +
 		"configures.")
-	e.file.P("func Register(mux *%s.ServeMux, h Handler) {", e.httpPkg)
-	e.file.P("\tregister(mux, h)")
+	e.file.P("func Register(mux *%s.ServeMux, h Handler%s) {",
+		e.httpPkg, e.authParam())
+	e.file.P("\tregister(mux, h%s)", e.authArg())
 	e.file.P("}\n")
 
-	e.file.P("func register(mux *%s.ServeMux, h Handler) {", e.httpPkg)
+	e.file.P("func register(mux *%s.ServeMux, h Handler%s) {",
+		e.httpPkg, e.authParam())
 	for _, o := range ops {
-		e.file.P("\tmux.Handle(%s, handle%s(h))",
-			strconv.Quote(o.op.Method+" "+o.op.Path), o.name)
+		e.file.P("\tmux.Handle(%s, handle%s(h%s))",
+			strconv.Quote(o.op.Method+" "+o.op.Path), o.name, e.authArg())
 	}
 	e.file.P("}\n")
 }
 
-// handler renders the decode, validate, dispatch, encode sequence for one
-// operation.
 // errorOptions renders the errors block of the workspace configuration as a
 // value the server seeds itself with.
 //
@@ -289,16 +299,32 @@ func (e *serverEmitter) errorOptions() {
 	e.file.P("}\n")
 }
 
+// handler renders the authorize, decode, validate, dispatch, encode sequence
+// for one operation.
 func (e *serverEmitter) handler(o *operation) error {
 	path := o.op.Params("path")
 	query := o.op.Params("query")
 	header := o.op.Params("header")
 	body := o.op.RequestBody.JSON()
 
-	e.file.P("func handle%s(h Handler) %s.Handler {", o.name, e.httpPkg)
+	e.file.P("func handle%s(h Handler%s) %s.Handler {",
+		o.name, e.authParam(), e.httpPkg)
 	e.file.P("\treturn %s.HandlerFunc("+
 		"func(w %s.ResponseWriter, r *%s.Request) {",
 		e.httpPkg, e.httpPkg, e.httpPkg)
+	if o.op.Secured() {
+		// Authentication runs before anything is parsed: there is no reason to
+		// decode a body for a caller who will be turned away, and the context
+		// the authenticator returns is the one the request carries from here
+		// on, so req.Raw and the handler both see the caller's identity.
+		e.file.P("\t\tctx, err := authorize%s(a, r)", o.name)
+		e.file.P("\t\tif err != nil {")
+		e.file.P("\t\t\t%s.Fail(r, err)", e.apierrPkg)
+		e.file.P("\t\t\treturn")
+		e.file.P("\t\t}")
+		e.file.P("\t\tr = r.WithContext(ctx)")
+		e.file.P("")
+	}
 	e.file.P("\t\treq := %s{Raw: r}", o.request)
 	e.file.P("\t\tv := %s.New()", e.validatePkg)
 
@@ -332,7 +358,13 @@ func (e *serverEmitter) handler(o *operation) error {
 	e.file.P("\t\t}")
 	e.file.P("")
 
-	e.file.P("\t\tresult, err := h.%s(r.Context(), req)", o.name)
+	if o.op.Secured() {
+		// err already exists in this scope, from the authorize call above.
+		e.file.P("\t\tvar result %s", e.resultType(o))
+		e.file.P("\t\tresult, err = h.%s(r.Context(), req)", o.name)
+	} else {
+		e.file.P("\t\tresult, err := h.%s(r.Context(), req)", o.name)
+	}
 	e.file.P("\t\tif err != nil {")
 	e.file.P("\t\t\t%s.Fail(r, err)", e.apierrPkg)
 	e.file.P("\t\t\treturn")
@@ -348,6 +380,27 @@ func (e *serverEmitter) handler(o *operation) error {
 	e.file.P("\t})")
 	e.file.P("}\n")
 	return nil
+}
+
+// secured reports whether this specification declares security an operation
+// actually uses.
+func (e *serverEmitter) secured() bool { return len(e.schemes) > 0 }
+
+// authParam is the Authenticator parameter the generated constructors take,
+// empty for a specification that declares no security.
+func (e *serverEmitter) authParam() string {
+	if !e.secured() {
+		return ""
+	}
+	return ", a Authenticator"
+}
+
+// authArg passes that parameter on.
+func (e *serverEmitter) authArg() string {
+	if !e.secured() {
+		return ""
+	}
+	return ", a"
 }
 
 // successStatus is the status code written for a successful call.

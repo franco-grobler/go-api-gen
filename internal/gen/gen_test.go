@@ -479,3 +479,174 @@ func TestAbsentRequiredFieldSkipsItsOtherChecks(t *testing.T) {
 		t.Errorf("an optional field needs no missing guard:\n%s", src)
 	}
 }
+
+// securedService is a workspace whose spec declares security, generating the
+// server as well as the types so the Authenticator surface is emitted.
+func securedService(spec string) map[string]string {
+	return map[string]string{
+		"go-api-gen.yaml": "version: 1\n" +
+			"services:\n" +
+			"  api:\n" +
+			"    spec: api.yaml\n" +
+			"    to: gen/api\n" +
+			"    generate: [types, validate, server]\n",
+		"api.yaml": spec,
+	}
+}
+
+const securedSpec = `
+openapi: 3.1.0
+info: { title: T, version: "1" }
+security:
+  - bearerAuth: []
+paths:
+  /me:
+    get:
+      operationId: getMe
+      responses: { "200": { description: ok } }
+  /login:
+    post:
+      operationId: login
+      security: []
+      responses: { "200": { description: ok } }
+  /admin:
+    get:
+      operationId: getAdmin
+      security:
+        - apiKeyAuth: []
+          bearerAuth: []
+        - oauth: [admin]
+      responses: { "200": { description: ok } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+    apiKeyAuth: { type: apiKey, in: header, name: X-API-Key }
+    unused: { type: apiKey, in: cookie, name: session }
+    oauth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://example.com/token
+          scopes: { admin: Everything }
+`
+
+func TestSecurityGeneratesAnAuthenticator(t *testing.T) {
+	out, err := generate(t, securedService(securedSpec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := normalize(out["gen/api/server.gen.go"])
+
+	// One method per scheme an operation actually names, with the credential
+	// the specification says arrives rather than a bag of strings.
+	for _, want := range []string{
+		"BearerAuth(ctx context.Context, r *http.Request, token string)",
+		"APIKeyAuth(ctx context.Context, r *http.Request, key string)",
+		"Oauth(ctx context.Context, r *http.Request, token string, " +
+			"scopes []string)",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("Authenticator should declare %q:\n%s", want, src)
+		}
+	}
+	// A scheme nobody requires is not a method somebody has to write.
+	if strings.Contains(src, "Unused(ctx") {
+		t.Errorf("an unreferenced scheme should generate no method:\n%s", src)
+	}
+
+	// The authenticator is a parameter, so a server cannot be built without
+	// one when the specification asks for it.
+	if !strings.Contains(src,
+		"func NewServer(h Handler, a Authenticator, opts ...ServerOption)") {
+		t.Errorf("NewServer should require an Authenticator:\n%s", src)
+	}
+
+	// security: [] overrides the document default rather than inheriting it.
+	if strings.Contains(src, "func authorizeLogin(") {
+		t.Errorf("an opted-out operation needs no authorization:\n%s", src)
+	}
+	if !strings.Contains(src, "func authorizeGetMe(") {
+		t.Errorf("an inheriting operation should be authorized:\n%s", src)
+	}
+
+	// Two schemes in one requirement are an AND, in one authAll chain; two
+	// requirements are an OR, in two.
+	admin := section(t, out["gen/api/server.gen.go"], "func authorizeGetAdmin(")
+	if n := strings.Count(admin, "authAll(a, r"); n != 2 {
+		t.Errorf("getAdmin should try 2 requirements, found %d:\n%s", n, admin)
+	}
+	if !strings.Contains(normalize(admin), "authStep{authOauth, "+
+		`[]string{"admin"}}`) {
+		t.Errorf("the operation's scopes should reach the step:\n%s", admin)
+	}
+}
+
+// An empty requirement means a caller may present nothing, but one who does
+// present a credential is still identified by it.
+func TestAnonymousRequirementFallsThrough(t *testing.T) {
+	out, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /a:
+    get:
+      operationId: a
+      security:
+        - {}
+        - bearerAuth: []
+      responses: { "200": { description: ok } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := section(t, out["gen/api/server.gen.go"], "func authorizeA(")
+	if !strings.Contains(body, "authStep{authBearerAuth") {
+		t.Errorf("the credential should still be tried:\n%s", body)
+	}
+	if !strings.Contains(body, "return r.Context(), nil") {
+		t.Errorf("a caller with no credential should continue:\n%s", body)
+	}
+}
+
+// A specification with no security generates none of the machinery, so the
+// server keeps the signature every unsecured service has.
+func TestNoSecurityGeneratesNoAuthenticator(t *testing.T) {
+	out, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /a:
+    get:
+      operationId: a
+      responses: { "200": { description: ok } }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := normalize(out["gen/api/server.gen.go"])
+	if strings.Contains(src, "Authenticator") {
+		t.Errorf("no security was declared:\n%s", src)
+	}
+	if !strings.Contains(src,
+		"func NewServer(h Handler, opts ...ServerOption)") {
+		t.Errorf("NewServer should be unchanged:\n%s", src)
+	}
+}
+
+// section returns the function beginning with prefix, up to the closing brace
+// in the first column, so an assertion can be scoped to one function.
+func section(t *testing.T, src, prefix string) string {
+	t.Helper()
+	i := strings.Index(src, prefix)
+	if i < 0 {
+		t.Fatalf("%q not found in:\n%s", prefix, src)
+	}
+	rest := src[i:]
+	if j := strings.Index(rest, "\n}\n"); j >= 0 {
+		return rest[:j]
+	}
+	return rest
+}

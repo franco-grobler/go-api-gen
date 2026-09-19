@@ -5,6 +5,8 @@ info:
     title: Identity
     version: "1.0.0"
     description: Who the platform knows about.
+security:
+    - bearerAuth: []
 paths:
     /users/{userId}:
         get:
@@ -22,6 +24,10 @@ paths:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/User'
+                "401":
+                    description: The token was missing or not accepted.
+                "403":
+                    description: The caller may not read this user.
 components:
     schemas:
         User:
