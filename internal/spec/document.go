@@ -21,6 +21,12 @@ type Document struct {
 	// file, in document order. A shared root generates from this list; a
 	// service spec generates only what its operations reach.
 	Components []*Schema
+
+	// SecuritySchemes holds components/securitySchemes in document order, and
+	// Security the document-wide requirements an operation inherits when it
+	// declares none of its own.
+	SecuritySchemes []*SecurityScheme
+	Security        []Requirement
 }
 
 // Info is the document's info block.
@@ -60,6 +66,13 @@ type Operation struct {
 	Parameters  []*Parameter
 	RequestBody *RequestBody
 	Responses   []*Response
+
+	// Security is the effective requirement list, which is the operation's own
+	// when HasSecurity is set and the document's otherwise. An operation that
+	// writes an empty list has HasSecurity set and no requirements, which is
+	// how it opts out of a document-wide default.
+	Security    []Requirement
+	HasSecurity bool
 }
 
 // Params returns the parameters in a given location, preserving order.
@@ -260,6 +273,21 @@ func (l *Loader) Document(abs string) (*Document, error) {
 		}
 	}
 
+	if schemes := mapGet(
+		mapGet(root, "components"),
+		"securitySchemes",
+	); schemes != nil {
+		d.SecuritySchemes, err = l.securitySchemes(abs, schemes)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if sec := mapGet(root, "security"); sec != nil {
+		if d.Security, err = securityList(abs, sec); err != nil {
+			return nil, err
+		}
+	}
+
 	if paths := mapGet(root, "paths"); paths != nil {
 		err := mapEach(paths, func(
 			path string,
@@ -279,6 +307,9 @@ func (l *Loader) Document(abs string) (*Document, error) {
 	}
 
 	if err := d.assignOperationIDs(); err != nil {
+		return nil, err
+	}
+	if err := d.resolveSecurity(); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -352,6 +383,14 @@ func (l *Loader) operation(
 	if body := mapGet(n, "requestBody"); body != nil {
 		if op.RequestBody, err = l.requestBody(file, body); err != nil {
 			return nil, fmt.Errorf("requestBody: %w", err)
+		}
+	}
+	if sec := mapGet(n, "security"); sec != nil {
+		// Present but empty is meaningful: it overrides the document default
+		// rather than inheriting it, so record that the key was written.
+		op.HasSecurity = true
+		if op.Security, err = securityList(file, sec); err != nil {
+			return nil, err
 		}
 	}
 	if resp := mapGet(n, "responses"); resp != nil {
