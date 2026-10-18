@@ -349,8 +349,12 @@ func (e *serverEmitter) handler(o *operation) error {
 
 	// Validation runs on everything that parsed, so one response reports every
 	// problem rather than the first.
-	if body != nil && body.Schema != nil && needsCheck(body.Schema) {
-		e.file.P("\t\treq.Body.Validate(v.Field(%s.Body))", e.validatePkg)
+	if body != nil && body.Schema != nil &&
+		needsCheck(e.gen.mapper, body.Schema) {
+		var b strings.Builder
+		e.validateValue(&b, body.Schema, "req.Body",
+			fmt.Sprintf("v.Field(%s.Body)", e.validatePkg), "\t\t")
+		e.file.WriteRaw(b.String())
 	}
 	e.file.P("\t\tif v.Failed() {")
 	e.file.P("\t\t\t%s.Fail(r, %s.FromValidator(v))", e.apierrPkg, e.apierrPkg)
@@ -508,7 +512,7 @@ func (e *serverEmitter) parseInto(s *spec.Schema, field, raw, loc, ind string,
 	}
 
 	// Constraints declared on the parameter apply once it has a value.
-	if needsCheck(s) {
+	if needsCheck(e.gen.mapper, s) {
 		var b strings.Builder
 		if optional {
 			fmt.Fprintf(&b, "%sif val, ok := %s.Get(); ok {\n", ind, field)
@@ -527,7 +531,7 @@ func (e *serverEmitter) validateValue(b *strings.Builder, s *spec.Schema,
 	expr, loc, ind string,
 ) {
 	ve := &validateEmitter{
-		ws: e.ws, file: e.file, svc: e.svc,
+		ws: e.ws, mapper: e.gen.mapper, file: e.file, svc: e.svc,
 		validatePkg: e.validatePkg, patternName: map[string]string{},
 	}
 	ve.value(b, s, expr, loc, ind)

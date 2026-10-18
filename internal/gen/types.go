@@ -118,6 +118,32 @@ func classify(s *spec.Schema) kind {
 	}
 }
 
+// aliasesScalar reports whether a named scalar mapped to t is declared as an
+// alias. A defined type over an imported struct such as time.Time would lose
+// its methods and its JSON encoding, so those become aliases.
+func aliasesScalar(t gomap.Type) bool {
+	return t.Import != "" || strings.HasPrefix(t.Expr, "[]")
+}
+
+// aliased reports whether a named schema is declared as an alias rather than
+// a defined type.
+//
+// An alias has no method set of its own: a Validate method on an alias of
+// uuid.UUID is a method on uuid.UUID, which Go refuses outside that package.
+// Validation therefore checks an aliased schema wherever it is used, never
+// through a method.
+func aliased(m *gomap.Mapper, s *spec.Schema) bool {
+	switch classify(s) {
+	case kindScalar:
+		t, _ := m.Scalar(s)
+		return aliasesScalar(t)
+	case kindAny:
+		return true
+	default:
+		return false
+	}
+}
+
 func (e *typeEmitter) declare(f *File, s *spec.Schema, name string) error {
 	if len(s.OneOf) > 0 || len(s.AnyOf) > 0 {
 		return fmt.Errorf("%s: schema %q uses oneOf/anyOf, which is not "+
@@ -152,9 +178,7 @@ func (e *typeEmitter) declare(f *File, s *spec.Schema, name string) error {
 	case kindScalar:
 		t, _ := e.mapper.Scalar(s)
 		expr := f.ImportType(t.Expr, t.Import)
-		// A defined type over an imported struct such as time.Time would lose
-		// its methods and its JSON encoding, so those become aliases.
-		if t.Import != "" || strings.HasPrefix(t.Expr, "[]") {
+		if aliasesScalar(t) {
 			f.P("type %s = %s\n", name, expr)
 		} else {
 			f.P("type %s %s\n", name, expr)

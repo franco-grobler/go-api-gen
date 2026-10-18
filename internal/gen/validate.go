@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/franco-grobler/go-api-gen/internal/gomap"
 	"github.com/franco-grobler/go-api-gen/internal/naming"
 	"github.com/franco-grobler/go-api-gen/internal/spec"
 	"github.com/franco-grobler/go-api-gen/internal/workspace"
@@ -19,9 +20,10 @@ const (
 
 // validateEmitter renders the Validate methods for one package's schemas.
 type validateEmitter struct {
-	ws   *workspace.Workspace
-	file *File
-	svc  *workspace.Service
+	ws     *workspace.Workspace
+	mapper *gomap.Mapper
+	file   *File
+	svc    *workspace.Service
 
 	validatePkg string   // qualifier for the validate runtime package
 	patterns    []string // regexp vars to declare, in emission order
@@ -37,6 +39,7 @@ func (g *Generator) EmitValidate(
 ) error {
 	e := &validateEmitter{
 		ws:          g.ws,
+		mapper:      g.mapper,
 		file:        file,
 		svc:         svc,
 		patternName: map[string]string{},
@@ -72,6 +75,19 @@ func (g *Generator) EmitValidate(
 // schema emits the Validate method, and any x-validate interface, for one
 // named schema.
 func (e *validateEmitter) schema(s *spec.Schema, name string) error {
+	if aliased(e.mapper, s) {
+		// An alias cannot carry a method, so its constraints are checked by
+		// value wherever it is used. A custom rule has nowhere to live.
+		if len(s.Validate) > 0 {
+			return fmt.Errorf("%s: x-validate on %q cannot be honoured: %s "+
+				"is declared as an alias, and an alias has no methods of "+
+				"its own.\n"+
+				"Move the rule to the property that uses %s.",
+				s.Loc, name, name, name)
+		}
+		return nil
+	}
+
 	recv := naming.Unexported(name)
 	if recv == name {
 		recv = "x"
@@ -157,7 +173,7 @@ func (e *validateEmitter) schemaBody(s *spec.Schema, expr, v string) string {
 			w("}")
 		}
 		for _, member := range s.AllOf {
-			if member.Named() {
+			if member.Named() && !aliased(e.mapper, member) {
 				w("%s.%s.Validate(%s)", expr, e.embeddedName(member), v)
 			}
 		}
@@ -198,7 +214,7 @@ func (e *validateEmitter) embeddedName(s *spec.Schema) string {
 func (e *validateEmitter) property(b *strings.Builder, p *spec.Property,
 	owner, v string,
 ) {
-	if !needsCheck(p.Schema) {
+	if !needsCheck(e.mapper, p.Schema) {
 		return
 	}
 	field := owner + "." + naming.Exported(p.Name)
@@ -229,12 +245,13 @@ func (e *validateEmitter) value(b *strings.Builder, s *spec.Schema,
 	expr, loc, indent string,
 ) {
 	switch {
-	case s.Named():
-		// A named schema validates itself, wherever it is used.
+	case s.Named() && !aliased(e.mapper, s):
+		// A named schema validates itself, wherever it is used. An alias has
+		// no Validate method, so it falls through to the checks for its value.
 		fmt.Fprintf(b, "%s%s.Validate(%s)\n", indent, expr, loc)
 	case s.Is("array") && s.Items != nil:
 		e.scalarChecks(b, s, expr, loc, indent)
-		if needsCheck(s.Items) {
+		if needsCheck(e.mapper, s.Items) {
 			fmt.Fprintf(b, "%sfor i, item := range %s {\n", indent, expr)
 			e.value(b, s.Items, "item",
 				fmt.Sprintf("%s.Index(i)", loc), indent+"\t")
@@ -250,14 +267,20 @@ func (e *validateEmitter) value(b *strings.Builder, s *spec.Schema,
 }
 
 // needsCheck reports whether a schema constrains anything worth emitting.
-func needsCheck(s *spec.Schema) bool {
+//
+// A named schema always does, through its Validate method, unless it is an
+// alias: that has no method, so only its own keywords count.
+func needsCheck(m *gomap.Mapper, s *spec.Schema) bool {
 	if s == nil {
 		return false
 	}
-	if s.Named() || len(s.Properties) > 0 || len(s.Validate) > 0 {
+	if s.Named() && !aliased(m, s) {
 		return true
 	}
-	if s.Is("array") && needsCheck(s.Items) {
+	if len(s.Properties) > 0 || len(s.Validate) > 0 {
+		return true
+	}
+	if s.Is("array") && needsCheck(m, s.Items) {
 		return true
 	}
 	return s.MinLength != nil || s.MaxLength != nil || s.Pattern != "" ||

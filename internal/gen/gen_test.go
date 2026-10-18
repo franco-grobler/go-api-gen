@@ -2,6 +2,7 @@ package gen
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -649,4 +650,107 @@ func section(t *testing.T, src, prefix string) string {
 		return rest[:j]
 	}
 	return rest
+}
+
+// compiles builds generated output as a module of its own against the local
+// runtime module, and fails the test with the compiler's output if it does
+// not build. Matching on the source cannot catch code that reads correctly
+// and does not compile, which is how the bug below went unnoticed.
+func compiles(t *testing.T, out map[string]string) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("compiles the generated code with the go toolchain")
+	}
+	runtimeDir, err := filepath.Abs(filepath.Join("..", "..", "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	files := map[string]string{
+		"go.mod": "module github.com/acme/monorepo\n\ngo 1.24\n\n" +
+			"require github.com/franco-grobler/go-api-gen/runtime v0.0.0\n\n" +
+			"replace github.com/franco-grobler/go-api-gen/runtime => " +
+			runtimeDir + "\n",
+	}
+	for name, body := range out {
+		if strings.HasSuffix(name, ".go") {
+			files[name] = body
+		}
+	}
+	for name, body := range files {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.CommandContext(t.Context(), "go", "build", "./...")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated code does not compile: %v\n%s", err, b)
+	}
+}
+
+// A named scalar declared as an alias has no method set of its own, so it is
+// validated by value where it is used, never through a Validate method: one
+// declared on an alias of time.Time is a method on time.Time.
+func TestAliasedScalarHasNoValidateMethod(t *testing.T) {
+	out, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /events/{at}:
+    parameters:
+      - { name: at, in: path, required: true,
+          schema: { $ref: '#/components/schemas/Timestamp' } }
+      - { name: since, in: query,
+          schema: { $ref: '#/components/schemas/Timestamp' } }
+    put:
+      operationId: putEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Event' }
+      responses: { "204": { description: ok } }
+  /stamps:
+    post:
+      operationId: postStamp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Timestamp' }
+      responses: { "204": { description: ok } }
+components:
+  schemas:
+    Timestamp: { type: string, format: date-time }
+    Anything: {}
+    Event:
+      type: object
+      required: [at]
+      properties:
+        at: { $ref: '#/components/schemas/Timestamp' }
+        seen: { $ref: '#/components/schemas/Timestamp' }
+        extra: { $ref: '#/components/schemas/Anything' }
+        name: { type: string, minLength: 1 }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := normalize(out["gen/api/validate.gen.go"])
+	for _, alias := range []string{"Timestamp", "Anything"} {
+		if strings.Contains(valid, " "+alias+") Validate(") {
+			t.Errorf("%s is an alias and cannot carry Validate:\n%s",
+				alias, out["gen/api/validate.gen.go"])
+		}
+	}
+	if !strings.Contains(valid, "func (event Event) Validate(") {
+		t.Errorf("Event is a defined type and should still validate:\n%s",
+			out["gen/api/validate.gen.go"])
+	}
+	compiles(t, out)
 }
