@@ -504,7 +504,11 @@ func (e *serverEmitter) parseInto(s *spec.Schema, field, raw, loc, ind string,
 		f.P("%s}", ind)
 
 	default:
-		target := e.ws.Qualify(s, e.svc)
+		// The field was declared with the schema's own type, which for an
+		// inline or whole-file enum is a name synthesized for it rather than
+		// one the workspace knows: converting to the base type instead would
+		// not assign.
+		target := e.types.nameOf(s)
 		if target == "" {
 			target = t.Expr
 		}

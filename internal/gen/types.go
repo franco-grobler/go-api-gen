@@ -144,6 +144,16 @@ func aliased(m *gomap.Mapper, s *spec.Schema) bool {
 	}
 }
 
+// nameOf returns the Go type a schema is declared as, from the package being
+// emitted: its workspace name when it has one, the name synthesized for it
+// when it was declared inline, and "" when it is not a declared type at all.
+func (e *typeEmitter) nameOf(s *spec.Schema) string {
+	if name := e.ws.Qualify(s, e.svc); name != "" {
+		return name
+	}
+	return e.synth[s]
+}
+
 func (e *typeEmitter) declare(f *File, s *spec.Schema, name string) error {
 	if len(s.OneOf) > 0 || len(s.AnyOf) > 0 {
 		return fmt.Errorf("%s: schema %q uses oneOf/anyOf, which is not "+

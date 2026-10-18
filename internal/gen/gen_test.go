@@ -655,7 +655,7 @@ func section(t *testing.T, src, prefix string) string {
 // compiles builds generated output as a module of its own against the local
 // runtime module, and fails the test with the compiler's output if it does
 // not build. Matching on the source cannot catch code that reads correctly
-// and does not compile, which is how the bug below went unnoticed.
+// and does not compile, which is how both bugs below went unnoticed.
 func compiles(t *testing.T, out map[string]string) {
 	t.Helper()
 	if testing.Short() {
@@ -751,6 +751,40 @@ components:
 	if !strings.Contains(valid, "func (event Event) Validate(") {
 		t.Errorf("Event is a defined type and should still validate:\n%s",
 			out["gen/api/validate.gen.go"])
+	}
+	compiles(t, out)
+}
+
+// An enum parameter that is not a component schema -- written inline, or a
+// $ref to a whole file -- is declared under a synthesized name, and the raw
+// string must be converted to that type rather than to its base.
+func TestUnnamedEnumParameterParsesToItsType(t *testing.T) {
+	files := securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /search:
+    get:
+      operationId: search
+      parameters:
+        - { name: kind, in: query, schema: { $ref: kind.yaml } }
+        - { name: order, in: query, required: true,
+            schema: { type: string, enum: [asc, desc] } }
+      responses: { "204": { description: ok } }
+`)
+	files["kind.yaml"] = "type: string\nenum: [video, channel]\n"
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := normalize(out["gen/api/server.gen.go"])
+	for _, want := range []string{
+		"req.Query.Kind = optional.Some(SearchQueryParamsKind(raw))",
+		"req.Query.Order = SearchQueryParamsOrder(raw)",
+	} {
+		if !strings.Contains(server, want) {
+			t.Errorf("want %q in\n%s", want, out["gen/api/server.gen.go"])
+		}
 	}
 	compiles(t, out)
 }
