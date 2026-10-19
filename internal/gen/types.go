@@ -544,13 +544,6 @@ func firstLine(s string) string {
 	return line
 }
 
-func lastSegment(expr string) string {
-	if i := strings.LastIndex(expr, "."); i >= 0 {
-		return expr[i+1:]
-	}
-	return expr
-}
-
 // typeOf returns the Go type expression for a schema used at a given position.
 // An inline object or enum is given a synthesized name derived from where it
 // appears, and queued for declaration.

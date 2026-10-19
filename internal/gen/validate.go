@@ -132,25 +132,48 @@ type rule struct {
 	loc    string // the sub-location it validates, empty for the whole schema
 }
 
-// collectRules gathers the schema-level and property-level custom rules.
+// collectRules gathers the schema-level and property-level custom rules,
+// including those of an inline allOf member, whose rules and properties are
+// this type's own.
 func collectRules(s *spec.Schema) []rule {
 	var out []rule
-	for _, name := range s.Validate {
-		out = append(out, rule{method: "Validate" + naming.Exported(name)})
+	seen := map[string]bool{}
+	add := func(r rule) {
+		// One rule reached twice, say on a member and on the schema, is one
+		// method to write and one check to run.
+		if !seen[r.method] {
+			seen[r.method] = true
+			out = append(out, r)
+		}
 	}
-	for _, p := range s.Properties {
-		// A property rule is named for the property it guards, so two schemas
-		// can both declare "reserved_words" without colliding.
-		for _, name := range p.Schema.Validate {
-			if p.Schema.Named() {
-				// The rule belongs to the referenced type, not to this one.
-				continue
+	own := []*spec.Schema{}
+	for _, member := range s.AllOf {
+		if !member.Named() {
+			own = append(own, member)
+		}
+	}
+	own = append(own, s)
+
+	for _, from := range own {
+		for _, name := range from.Validate {
+			add(rule{method: "Validate" + naming.Exported(name)})
+		}
+	}
+	for _, from := range own {
+		for _, p := range from.Properties {
+			// A property rule is named for the property it guards, so two
+			// schemas can both declare "reserved_words" without colliding.
+			for _, name := range p.Schema.Validate {
+				if p.Schema.Named() {
+					// The rule belongs to the referenced type, not this one.
+					continue
+				}
+				add(rule{
+					method: "Validate" + naming.Exported(p.Name) +
+						naming.Exported(name),
+					loc: p.Name,
+				})
 			}
-			out = append(out, rule{
-				method: "Validate" + naming.Exported(p.Name) +
-					naming.Exported(name),
-				loc: p.Name,
-			})
 		}
 	}
 	return out
@@ -172,13 +195,16 @@ func (e *validateEmitter) schemaBody(s *spec.Schema, expr, v string) string {
 			w("\t%s.Field(name).Fail(\"missing\", \"Field required\")", v)
 			w("}")
 		}
-		for _, member := range s.AllOf {
-			if member.Named() && !aliased(e.mapper, member) {
-				w("%s.%s.Validate(%s)", expr, e.embeddedName(member), v)
+		// Walked in the layout the struct was declared with, so a property
+		// an inline allOf member contributed is checked like one of the
+		// schema's own, under the field name it was given.
+		for _, it := range structItems(e.ws, s) {
+			switch {
+			case it.prop != nil:
+				e.property(&b, it.prop, it.name, expr, v)
+			case !aliased(e.mapper, it.embed):
+				w("%s.%s.Validate(%s)", expr, it.name, v)
 			}
-		}
-		for _, p := range s.Properties {
-			e.property(&b, p, expr, v)
 		}
 	case s.IsEnum():
 		w("if !%s.Valid() {", expr)
@@ -206,18 +232,14 @@ func hasRequired(s *spec.Schema) bool {
 	return len(requiredNames(s)) > 0
 }
 
-func (e *validateEmitter) embeddedName(s *spec.Schema) string {
-	return lastSegment(e.ws.Qualify(s, e.svc))
-}
-
 // property renders the checks for one struct field.
 func (e *validateEmitter) property(b *strings.Builder, p *spec.Property,
-	owner, v string,
+	goName, owner, v string,
 ) {
 	if !needsCheck(e.mapper, p.Schema) {
 		return
 	}
-	field := owner + "." + naming.Exported(p.Name)
+	field := owner + "." + goName
 	loc := fmt.Sprintf("%s.Field(%q)", v, p.Name)
 	optional := !p.Required || p.Schema.Nullable
 

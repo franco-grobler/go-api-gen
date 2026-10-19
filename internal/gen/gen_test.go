@@ -889,6 +889,106 @@ func TestDecoderOnlyForTheMember(t *testing.T) {
 	})
 }
 
+// A property declared in an inline allOf member is a field of the composed
+// struct like any other, so its constraints and custom rules are checked
+// like any other's. They used to be generated and then never run.
+func TestInlineAllOfMemberIsValidated(t *testing.T) {
+	files := oneService(pathsFor(`    Base:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string, minLength: 1 }
+    Video:
+      allOf:
+        - $ref: '#/components/schemas/Base'
+        - type: object
+          required: [title]
+          properties:
+            title: { type: string, maxLength: 5 }
+            rating: { type: integer, minimum: 0, maximum: 5 }
+            slug: { type: string, x-validate: [lowercase] }
+`, "Video"))
+	files["go-api-gen.yaml"] = strings.Replace(files["go-api-gen.yaml"],
+		"generate: [types]", "generate: [types, validate]", 1)
+
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passes(t, out, map[string]string{
+		"gen/api/rules.go": `package api
+
+import (
+	"strings"
+
+	"github.com/franco-grobler/go-api-gen/runtime/validate"
+)
+
+func (x Video) ValidateSlugLowercase(v *validate.V) {
+	if s, ok := x.Slug.Get(); ok && s != strings.ToLower(s) {
+		v.Fail("lowercase", "Slug should be lowercase")
+	}
+}
+`,
+		"gen/api/member_test.go": `package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"testing"
+
+	"github.com/franco-grobler/go-api-gen/runtime/validate"
+)
+
+func failures(t *testing.T, body string) []string {
+	t.Helper()
+	var x Video
+	if err := json.Unmarshal([]byte(body), &x); err != nil {
+		t.Fatal(err)
+	}
+	v := validate.New()
+	x.Validate(v)
+	var got []string
+	for _, e := range v.Errors() {
+		got = append(got, fmt.Sprint(e.Loc...)+": "+e.Type)
+	}
+	slices.Sort(got)
+	return got
+}
+
+func TestMemberConstraintsAreChecked(t *testing.T) {
+	got := failures(t, "{\"id\": \"\", \"title\": \"too long\", "+
+		"\"rating\": 9, \"slug\": \"ABC\"}")
+	want := []string{
+		"id: string_too_short",
+		"rating: less_than_equal",
+		"slug: lowercase",
+		"title: string_too_long",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("failures = %q, want %q", got, want)
+	}
+}
+
+func TestMissingMemberFieldIsReportedOnce(t *testing.T) {
+	got := failures(t, "{\"id\": \"a\"}")
+	if want := []string{"title: missing"}; !slices.Equal(got, want) {
+		t.Errorf("failures = %q, want %q", got, want)
+	}
+}
+
+func TestValidMemberFieldsPass(t *testing.T) {
+	got := failures(t, "{\"id\": \"a\", \"title\": \"short\", "+
+		"\"rating\": 5, \"slug\": \"abc\"}")
+	if len(got) > 0 {
+		t.Errorf("unexpected failures %q", got)
+	}
+}
+`,
+	})
+}
+
 // A property whose only constraint is a custom rule is checked by the rule,
 // which its owner calls as a method. Unwrapping the Optional anyway left an
 // empty block around an unused variable, which does not compile.
