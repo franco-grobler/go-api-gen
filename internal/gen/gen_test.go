@@ -788,3 +788,33 @@ paths:
 	}
 	compiles(t, out)
 }
+
+// A property whose only constraint is a custom rule is checked by the rule,
+// which its owner calls as a method. Unwrapping the Optional anyway left an
+// empty block around an unused variable, which does not compile.
+func TestOptionalPropertyWithOnlyACustomRule(t *testing.T) {
+	files := oneService(pathsFor(`    S:
+      type: object
+      properties:
+        slug: { type: string, x-validate: [lowercase] }
+`, "S"))
+	files["go-api-gen.yaml"] = strings.Replace(files["go-api-gen.yaml"],
+		"generate: [types]", "generate: [types, validate]", 1)
+	files["gen/api/rules.go"] = "package api\n\n" +
+		"import \"github.com/franco-grobler/go-api-gen/runtime/validate\"\n\n" +
+		"func (S) ValidateSlugLowercase(*validate.V) {}\n"
+
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := normalize(out["gen/api/validate.gen.go"])
+	if strings.Contains(src, "s.Slug.Get()") {
+		t.Errorf("a rule-only property needs no unwrap:\n%s", src)
+	}
+	if !strings.Contains(src, `s.ValidateSlugLowercase(v.Field("slug"))`) {
+		t.Errorf("the rule should still be called:\n%s", src)
+	}
+	out["gen/api/rules.go"] = files["gen/api/rules.go"]
+	compiles(t, out)
+}

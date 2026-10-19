@@ -277,7 +277,10 @@ func needsCheck(m *gomap.Mapper, s *spec.Schema) bool {
 	if s.Named() && !aliased(m, s) {
 		return true
 	}
-	if len(s.Properties) > 0 || len(s.Validate) > 0 {
+	// x-validate on an unnamed schema is not counted: its owner calls the
+	// rule as a method (see collectRules), so the value itself has nothing
+	// to check, and an Optional unwrapped for nothing does not compile.
+	if len(s.Properties) > 0 {
 		return true
 	}
 	if s.Is("array") && needsCheck(m, s.Items) {
