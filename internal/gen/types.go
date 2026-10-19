@@ -338,6 +338,7 @@ func (e *typeEmitter) declareStruct(
 	}
 
 	required := requiredNames(s)
+	counted := countsProperties(s)
 	var decoders []string
 	for _, it := range items {
 		if it.embed != nil && hasDecoder(it.embed) {
@@ -352,23 +353,30 @@ func (e *typeEmitter) declareStruct(
 		f.P("\t// zero value that may have been sent deliberately.")
 		f.P("\tmissingFields []string `json:\"-\"`")
 	}
+	if counted {
+		f.P("")
+		f.P("\t// propertyCount is the number of keys in the JSON object")
+		f.P("\t// that produced this value, unknown ones included, which is")
+		f.P("\t// what minProperties and maxProperties count.")
+		f.P("\tpropertyCount int `json:\"-\"`")
+	}
 	f.P("}\n")
 
-	if len(required) > 0 || len(decoders) > 0 {
-		e.unmarshalJSON(f, name, required, decoders)
+	if len(required) > 0 || counted || len(decoders) > 0 {
+		e.unmarshalJSON(f, name, required, counted, decoders)
 	}
 	return nil
 }
 
 // hasDecoder reports whether the struct declared from a named schema has an
-// UnmarshalJSON of its own: one with required properties to track, or one
-// embedding a member that has one, since that method would otherwise be
-// promoted onto it.
+// UnmarshalJSON of its own: one with required properties to track or keys to
+// count, or one embedding a member that has one, since that method would
+// otherwise be promoted onto it.
 func hasDecoder(s *spec.Schema) bool {
 	if classify(s) != kindStruct {
 		return false
 	}
-	if len(requiredNames(s)) > 0 {
+	if len(requiredNames(s)) > 0 || countsProperties(s) {
 		return true
 	}
 	for _, member := range s.AllOf {
@@ -442,7 +450,37 @@ func requiredNames(s *spec.Schema) []string {
 	return out
 }
 
-// unmarshalJSON emits a decoder that records which required keys were absent.
+// propertyBounds returns the tightest minProperties and maxProperties a struct
+// declared from s must honour, from the schema and its inline allOf members,
+// whose keywords constrain this same object. Either is nil when unbounded.
+func propertyBounds(s *spec.Schema) (lo, hi *uint64) {
+	own := []*spec.Schema{}
+	for _, member := range s.AllOf {
+		if !member.Named() {
+			own = append(own, member)
+		}
+	}
+	own = append(own, s)
+	for _, from := range own {
+		if n := from.MinProperties; n != nil && (lo == nil || *n > *lo) {
+			lo = n
+		}
+		if n := from.MaxProperties; n != nil && (hi == nil || *n < *hi) {
+			hi = n
+		}
+	}
+	return lo, hi
+}
+
+// countsProperties reports whether the struct declared from s records how
+// many keys it was decoded from.
+func countsProperties(s *spec.Schema) bool {
+	lo, hi := propertyBounds(s)
+	return lo != nil || hi != nil
+}
+
+// unmarshalJSON emits a decoder that records which required keys were absent,
+// and, when counted, how many keys there were.
 //
 // Go cannot otherwise tell a field the client omitted from one it sent as the
 // zero value, and reporting a deliberate 0 or "" as missing would be wrong.
@@ -451,13 +489,20 @@ func requiredNames(s *spec.Schema) []string {
 // is called in turn so it records its own absent keys, which its Validate
 // reports.
 func (e *typeEmitter) unmarshalJSON(
-	f *File, name string, required, decoders []string,
+	f *File, name string, required []string, counted bool, decoders []string,
 ) {
 	jsonPkg := f.Import("encoding/json")
 	recv := "x"
 
-	f.Comment("UnmarshalJSON decodes " + name +
-		" and records which required properties were absent.")
+	does := "records which required properties were absent."
+	switch {
+	case len(required) > 0 && counted:
+		does = "records which required properties were absent and " +
+			"how many keys it held."
+	case counted:
+		does = "counts the keys it held."
+	}
+	f.Comment("UnmarshalJSON decodes " + name + " and " + does)
 	f.P("func (%s *%s) UnmarshalJSON(data []byte) error {", recv, name)
 	if len(decoders) == 0 {
 		f.P("\t// The alias drops this method, so decoding does not recurse.")
@@ -490,7 +535,7 @@ func (e *typeEmitter) unmarshalJSON(
 			f.P("\t\treturn err")
 			f.P("\t}")
 		}
-		if len(required) == 0 {
+		if len(required) == 0 && !counted {
 			f.P("\treturn nil")
 			f.P("}\n")
 			return
@@ -501,16 +546,21 @@ func (e *typeEmitter) unmarshalJSON(
 	f.P("\tif err := %s.Unmarshal(data, &present); err != nil {", jsonPkg)
 	f.P("\t\treturn err")
 	f.P("\t}")
-	f.P("\tfor _, name := range []string{")
-	for _, r := range required {
-		f.P("\t\t%s,", strconv.Quote(r))
+	if counted {
+		f.P("\t%s.propertyCount = len(present)", recv)
 	}
-	f.P("\t} {")
-	f.P("\t\tif _, ok := present[name]; !ok {")
-	f.P("\t\t\t%s.missingFields = append(%s.missingFields, name)",
-		recv, recv)
-	f.P("\t\t}")
-	f.P("\t}")
+	if len(required) > 0 {
+		f.P("\tfor _, name := range []string{")
+		for _, r := range required {
+			f.P("\t\t%s,", strconv.Quote(r))
+		}
+		f.P("\t} {")
+		f.P("\t\tif _, ok := present[name]; !ok {")
+		f.P("\t\t\t%s.missingFields = append(%s.missingFields, name)",
+			recv, recv)
+		f.P("\t\t}")
+		f.P("\t}")
+	}
 	f.P("\treturn nil")
 	f.P("}\n")
 }

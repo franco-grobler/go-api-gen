@@ -1113,3 +1113,103 @@ func TestWrappedFieldsKeepTheirMembersRules(t *testing.T) {
 			out["gen/api/server.gen.go"])
 	}
 }
+
+// minProperties and maxProperties count the keys of the JSON object, so a
+// PATCH body of {} can be refused. A struct cannot be measured after the
+// fact, since an absent field and a zero one look alike, so it counts the keys
+// as it decodes; a map is measured directly.
+func TestPropertyCountIsChecked(t *testing.T) {
+	files := oneService(pathsFor(`    Base:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+    Update:
+      type: object
+      minProperties: 1
+      maxProperties: 2
+      properties:
+        title: { type: string }
+        text: { type: string }
+        tags:
+          type: object
+          minProperties: 1
+          additionalProperties: { type: string }
+    Video:
+      allOf:
+        - $ref: '#/components/schemas/Base'
+        - type: object
+          minProperties: 2
+          properties:
+            title: { type: string }
+`, "Update", "Video"))
+	files["go-api-gen.yaml"] = strings.Replace(files["go-api-gen.yaml"],
+		"generate: [types]", "generate: [types, validate]", 1)
+
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passes(t, out, map[string]string{
+		"gen/api/count_test.go": `package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"testing"
+
+	"github.com/franco-grobler/go-api-gen/runtime/validate"
+)
+
+func failures(t *testing.T, x interface{ Validate(*validate.V) },
+	body string,
+) []string {
+	t.Helper()
+	if err := json.Unmarshal([]byte(body), x); err != nil {
+		t.Fatal(err)
+	}
+	v := validate.New()
+	x.Validate(v)
+	var got []string
+	for _, e := range v.Errors() {
+		got = append(got, fmt.Sprint(e.Loc...)+": "+e.Type)
+	}
+	return got
+}
+
+func TestPropertyCount(t *testing.T) {
+	for _, c := range []struct {
+		body string
+		want []string
+	}{
+		{"{}", []string{": too_short"}},
+		{"{\"title\": \"t\"}", nil},
+		// An unknown key is a key: JSON Schema counts it.
+		{"{\"other\": 1}", nil},
+		{"{\"title\": \"t\", \"text\": \"x\", \"other\": 1}",
+			[]string{": too_long"}},
+		{"{\"tags\": {}}", []string{"tags: too_short"}},
+		{"{\"tags\": {\"a\": \"b\"}}", nil},
+	} {
+		got := failures(t, &Update{}, c.body)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: failures = %q, want %q", c.body, got, c.want)
+		}
+	}
+}
+
+// The inline member's bound counts the whole object, embedded keys included.
+func TestPropertyCountThroughAllOf(t *testing.T) {
+	got := failures(t, &Video{}, "{\"id\": \"a\"}")
+	if want := []string{": too_short"}; !slices.Equal(got, want) {
+		t.Errorf("failures = %q, want %q", got, want)
+	}
+	got = failures(t, &Video{}, "{\"id\": \"a\", \"title\": \"t\"}")
+	if len(got) > 0 {
+		t.Errorf("failures = %q, want none", got)
+	}
+}
+`,
+	})
+}

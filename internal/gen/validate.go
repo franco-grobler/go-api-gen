@@ -195,6 +195,8 @@ func (e *validateEmitter) schemaBody(s *spec.Schema, expr, v string) string {
 			w("\t%s.Field(name).Fail(\"missing\", \"Field required\")", v)
 			w("}")
 		}
+		lo, hi := propertyBounds(s)
+		e.propertyCount(&b, lo, hi, expr+".propertyCount", v, "\t")
 		// Walked in the layout the struct was declared with, so a property
 		// an inline allOf member contributed is checked like one of the
 		// schema's own, under the field name it was given.
@@ -314,7 +316,39 @@ func needsCheck(m *gomap.Mapper, s *spec.Schema) bool {
 		s.Minimum != nil || s.Maximum != nil ||
 		s.ExclusiveMinimum != nil || s.ExclusiveMaximum != nil ||
 		s.MultipleOf != nil || s.MinItems != nil || s.MaxItems != nil ||
+		s.MinProperties != nil || s.MaxProperties != nil ||
 		len(s.Enum) > 0
+}
+
+// propertyCount renders the minProperties and maxProperties checks against
+// count, an expression for the number of keys the object holds.
+func (e *validateEmitter) propertyCount(b *strings.Builder, lo, hi *uint64,
+	count, loc, indent string,
+) {
+	bounds := []struct {
+		n   *uint64
+		op  string
+		msg string
+		key string
+	}{
+		{lo, "<", "Object should have at least %d propert%s", "min_length"},
+		{hi, ">", "Object should have at most %d propert%s", "max_length"},
+	}
+	slugs := map[string]string{"<": "too_short", ">": "too_long"}
+	for _, c := range bounds {
+		if c.n == nil {
+			continue
+		}
+		n := *c.n
+		suffix := "ies"
+		if n == 1 {
+			suffix = "y"
+		}
+		fmt.Fprintf(b, "%sif %s %s %d {\n", indent, count, c.op, n)
+		fmt.Fprintf(b, "%s\t%s.Fail(%q, %q, %q, %d)\n", indent, loc,
+			slugs[c.op], fmt.Sprintf(c.msg, n, suffix), c.key, n)
+		fmt.Fprintf(b, "%s}\n", indent)
+	}
 }
 
 // scalarChecks renders the constraint keywords that apply to a value directly.
@@ -401,6 +435,13 @@ func (e *validateEmitter) scalarChecks(b *strings.Builder, s *spec.Schema,
 			fail("too_long",
 				fmt.Sprintf("List should have at most %d item%s", n, plural(n)),
 				"\"max_length\"", strconv.FormatUint(n, 10)))
+	}
+
+	// A map holds exactly the keys it was decoded from. A struct cannot be
+	// measured this way, so it counts them as it decodes (see schemaBody).
+	if s.MinProperties != nil || s.MaxProperties != nil {
+		e.propertyCount(b, s.MinProperties, s.MaxProperties,
+			"len("+expr+")", loc, indent)
 	}
 
 	// An enum on an unnamed value is checked inline; a named enum type has a

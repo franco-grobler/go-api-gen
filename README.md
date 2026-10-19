@@ -419,9 +419,8 @@ Under construction. Working today:
 
 One validation gap is **silent** — the constraint is accepted by the parser
 and never applied, so the generated server lets the value through. Do not rely
-on it until this says otherwise: `multipleOf`, `uniqueItems`, `const`,
-`minProperties`, `maxProperties`, and `additionalProperties: false`, which does
-not reject unknown fields.
+on it until this says otherwise: `multipleOf`, `uniqueItems`, `const`, and
+`additionalProperties: false`, which does not reject unknown fields.
 
 ## Development
 
