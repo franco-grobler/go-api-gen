@@ -266,6 +266,7 @@ func (e *validateEmitter) property(b *strings.Builder, p *spec.Property,
 func (e *validateEmitter) value(b *strings.Builder, s *spec.Schema,
 	expr, loc, indent string,
 ) {
+	s = unwrap(s)
 	switch {
 	case s.Named() && !aliased(e.mapper, s):
 		// A named schema validates itself, wherever it is used. An alias has
@@ -293,6 +294,7 @@ func (e *validateEmitter) value(b *strings.Builder, s *spec.Schema,
 // A named schema always does, through its Validate method, unless it is an
 // alias: that has no method, so only its own keywords count.
 func needsCheck(m *gomap.Mapper, s *spec.Schema) bool {
+	s = unwrap(s)
 	if s == nil {
 		return false
 	}

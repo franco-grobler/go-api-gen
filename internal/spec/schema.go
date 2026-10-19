@@ -147,6 +147,34 @@ func (s *Schema) IsEnum() bool {
 	return s != nil && len(s.Enum) > 0
 }
 
+// Wrapped returns the one schema s wraps, when s is an inline allOf of a
+// single member that adds nothing but annotations: a title, description,
+// default, example, nullability or deprecation. Otherwise it returns nil.
+//
+// It is the OpenAPI 3.0 idiom for describing a $ref, whose siblings that
+// version ignores, and such a schema means its member. A named component is
+// never a wrapper: it was given a name to be a type of its own.
+func (s *Schema) Wrapped() *Schema {
+	if s == nil || s.Named() || len(s.AllOf) != 1 {
+		return nil
+	}
+	adds := len(s.Type) > 0 || s.Format != "" || len(s.Enum) > 0 ||
+		s.HasConst || len(s.Properties) > 0 || len(s.Required) > 0 ||
+		s.AdditionalPro != nil || s.NoAdditional ||
+		s.MinProperties != nil || s.MaxProperties != nil ||
+		s.Items != nil || s.MinItems != nil || s.MaxItems != nil ||
+		s.UniqueItems || s.MinLength != nil || s.MaxLength != nil ||
+		s.Pattern != "" || s.Minimum != nil || s.Maximum != nil ||
+		s.ExclusiveMinimum != nil || s.ExclusiveMaximum != nil ||
+		s.MultipleOf != nil || len(s.OneOf) > 0 || len(s.AnyOf) > 0 ||
+		s.Not != nil || s.Discriminator != nil || s.GoType != "" ||
+		s.GoName != "" || len(s.Validate) > 0
+	if adds {
+		return nil
+	}
+	return s.AllOf[0]
+}
+
 // Empty reports whether the schema constrains nothing at all, which maps to
 // an untyped Go value.
 func (s *Schema) Empty() bool {

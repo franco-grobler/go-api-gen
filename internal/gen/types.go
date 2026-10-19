@@ -118,6 +118,18 @@ func classify(s *spec.Schema) kind {
 	}
 }
 
+// unwrap returns the schema a chain of annotation-only allOf wrappers stands
+// for (see spec.Schema.Wrapped), or s itself when it wraps nothing. Typed as
+// itself, a wrapper became a struct embedding its member: harmless over an
+// object, but an empty struct over a whole-file enum, which no JSON string
+// decodes into.
+func unwrap(s *spec.Schema) *spec.Schema {
+	for w := s.Wrapped(); w != nil; w = s.Wrapped() {
+		s = w
+	}
+	return s
+}
+
 // aliasesScalar reports whether a named scalar mapped to t is declared as an
 // alias. A defined type over an imported struct such as time.Time would lose
 // its methods and its JSON encoding, so those become aliases.
@@ -553,6 +565,7 @@ func (e *typeEmitter) typeOf(
 	owner,
 	role string,
 ) (string, error) {
+	s = unwrap(s)
 	if s == nil || s.Empty() {
 		return "any", nil
 	}

@@ -444,6 +444,7 @@ func (e *serverEmitter) decodeParam(
 func (e *serverEmitter) parseInto(s *spec.Schema, field, raw, loc, ind string,
 	optional bool,
 ) {
+	s = unwrap(s)
 	f := e.file
 	assign := func(expr string) {
 		if optional {

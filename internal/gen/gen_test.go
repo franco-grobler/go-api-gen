@@ -1018,3 +1018,98 @@ func TestOptionalPropertyWithOnlyACustomRule(t *testing.T) {
 	out["gen/api/rules.go"] = files["gen/api/rules.go"]
 	compiles(t, out)
 }
+
+// allOf of a single $ref plus a description is how OpenAPI 3.0 describes a
+// reference, and it means the referenced schema. It used to be typed as a
+// struct embedding its member, which over a whole-file enum was an empty
+// struct that no JSON string decodes into.
+func TestAnnotatedRefIsItsMember(t *testing.T) {
+	files := securedService(`
+openapi: 3.0.3
+info: { title: T, version: "1" }
+paths:
+  /reindex:
+    post:
+      operationId: reindex
+      parameters:
+        - name: scope
+          in: query
+          schema:
+            description: Restrict the rebuild.
+            allOf: [{ $ref: kind.yaml }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Reindex' }
+      responses: { "204": { description: ok } }
+components:
+  schemas:
+    Status: { type: string, enum: [on, off] }
+    Reindex:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          description: Which entities to rebuild.
+          allOf: [{ $ref: kind.yaml }]
+        status:
+          description: Whether the rebuild runs.
+          allOf: [{ $ref: '#/components/schemas/Status' }]
+`)
+	files["kind.yaml"] = "type: string\nenum: [video, channel]\n"
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passes(t, out, map[string]string{
+		"gen/api/wrapper_test.go": `package api
+
+import (
+	"encoding/json"
+	"slices"
+	"testing"
+
+	"github.com/franco-grobler/go-api-gen/runtime/validate"
+)
+
+func decode(t *testing.T, body string) (Reindex, []string) {
+	t.Helper()
+	var r Reindex
+	if err := json.Unmarshal([]byte(body), &r); err != nil {
+		t.Fatalf("decoding %s: %v", body, err)
+	}
+	v := validate.New()
+	r.Validate(v)
+	var got []string
+	for _, e := range v.Errors() {
+		got = append(got, e.Type)
+	}
+	return r, got
+}
+
+func TestWrappedFieldsAreTheirMembers(t *testing.T) {
+	r, got := decode(t, "{\"kind\": \"video\", \"status\": \"on\"}")
+	if len(got) > 0 {
+		t.Errorf("unexpected failures %q", got)
+	}
+	status, _ := r.Status.Get()
+	if string(r.Kind) != "video" || status != StatusOn {
+		t.Errorf("decoded %+v", r)
+	}
+}
+
+func TestWrappedFieldsKeepTheirMembersRules(t *testing.T) {
+	_, got := decode(t, "{\"kind\": \"film\", \"status\": \"maybe\"}")
+	if want := []string{"enum", "enum"}; !slices.Equal(got, want) {
+		t.Errorf("failures = %q, want %q", got, want)
+	}
+}
+`,
+	})
+	server := normalize(out["gen/api/server.gen.go"])
+	if strings.Contains(server, "optional.Some(string(raw))") {
+		t.Errorf("a wrapped enum parameter should parse to its type:\n%s",
+			out["gen/api/server.gen.go"])
+	}
+}
