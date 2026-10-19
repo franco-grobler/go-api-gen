@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 
@@ -12,8 +13,22 @@ import (
 	"github.com/franco-grobler/go-api-gen/internal/workspace"
 )
 
-// version is overridden at release time with -ldflags.
-var version = "dev"
+// version can be set with -ldflags. Left alone, it is the module version Go
+// recorded at build time, which `go install ...@v1.2.3` sets.
+var version = ""
+
+// buildVersion reports the version this binary was built as.
+func buildVersion() string {
+	if version != "" {
+		return version
+	}
+	// A build from a checkout records "(devel)", which says less than "dev".
+	if info, ok := debug.ReadBuildInfo(); ok &&
+		info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
 
 // options are the flags shared by every command that reads a workspace.
 type options struct {
@@ -35,7 +50,7 @@ still gets a self-contained, tree-shaken OpenAPI document of its own, and the
 unify command stitches them all into one platform-wide document.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       version,
+		Version:       buildVersion(),
 	}
 	root.SetVersionTemplate("go-api-gen {{.Version}}\n")
 

@@ -1,0 +1,14 @@
+# Install with `just hooks`.
+default_install_hook_types:
+  - commit-msg
+
+repos:
+  - repo: local
+    hooks:
+      # The same check CI runs on every commit and pull request title, from
+      # the rules in cliff.toml. Needs git-cliff installed.
+      - id: conventional-commit
+        name: conventional commit
+        entry: scripts/check-commit-msg.sh
+        language: script
+        stages: [commit-msg]

@@ -118,3 +118,24 @@ tidy:
 # Remove the installed linter and the coverage profile.
 clean:
     rm -rf {{ gobin }} coverage.out
+
+# Install the commit-msg hook that holds commits to cliff.toml's rules.
+hooks:
+    pre-commit install
+
+# Preview the CHANGELOG.md entry a release cut from HEAD would get.
+release-notes BUMP="auto":
+    git cliff --config cliff.toml --unreleased --bump {{ BUMP }}
+
+# Cut a release: BUMP is auto, patch, minor, or major, or an exact version.
+release BUMP="auto":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # The tags are made by the Prepare release workflow, so a release always
+    # comes from main as CI saw it and gets its changelog entry.
+    case "{{ BUMP }}" in
+        auto | patch | minor | major) input=(-f bump={{ BUMP }}) ;;
+        *) input=(-f version={{ BUMP }}) ;;
+    esac
+    gh workflow run prepare-release.yml --ref main "${input[@]}"
+    echo "Started. Follow it with: gh run watch"
