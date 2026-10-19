@@ -308,31 +308,30 @@ func enumLiteral(v any, base string) (lit, str string, ok bool) {
 func (e *typeEmitter) declareStruct(
 	f *File, s *spec.Schema, name string,
 ) error {
+	items := structItems(e.ws, s)
+
 	f.P("type %s struct {", name)
-
-	fields := naming.NewDeduper()
-
-	// An allOf member that is itself a named schema is embedded, which keeps
-	// one Go type for one schema instead of copying its fields.
-	for _, member := range s.AllOf {
-		if member.Named() {
-			expr, err := e.reference(f, member)
+	for _, it := range items {
+		if it.embed != nil {
+			expr, err := e.reference(f, it.embed)
 			if err != nil {
 				return err
 			}
-			fields.Take(lastSegment(expr))
 			f.P("\t%s", expr)
 			continue
 		}
-		if err := e.structFields(f, member, name, fields); err != nil {
+		if err := e.structField(f, it.prop, it.name, name); err != nil {
 			return err
 		}
 	}
-	if err := e.structFields(f, s, name, fields); err != nil {
-		return err
-	}
 
 	required := requiredNames(s)
+	var decoders []string
+	for _, it := range items {
+		if it.embed != nil && hasDecoder(it.embed) {
+			decoders = append(decoders, it.name)
+		}
+	}
 	if len(required) > 0 {
 		f.P("")
 		f.P("\t// missingFields records the required properties absent")
@@ -343,10 +342,70 @@ func (e *typeEmitter) declareStruct(
 	}
 	f.P("}\n")
 
-	if len(required) > 0 {
-		e.unmarshalJSON(f, name, required)
+	if len(required) > 0 || len(decoders) > 0 {
+		e.unmarshalJSON(f, name, required, decoders)
 	}
 	return nil
+}
+
+// hasDecoder reports whether the struct declared from a named schema has an
+// UnmarshalJSON of its own: one with required properties to track, or one
+// embedding a member that has one, since that method would otherwise be
+// promoted onto it.
+func hasDecoder(s *spec.Schema) bool {
+	if classify(s) != kindStruct {
+		return false
+	}
+	if len(requiredNames(s)) > 0 {
+		return true
+	}
+	for _, member := range s.AllOf {
+		if member.Named() && hasDecoder(member) {
+			return true
+		}
+	}
+	return false
+}
+
+// structItem is one entry of a struct declared from a schema: a named allOf
+// member it embeds, or a property it declares as a field of its own.
+type structItem struct {
+	embed *spec.Schema   // the embedded member; nil for a field
+	prop  *spec.Property // the property; nil for an embedded member
+	name  string         // the field's Go name; an embedded type's own name
+}
+
+// structItems lays out the struct declared from s, in declaration order.
+//
+// An allOf member that is itself a named schema is embedded, which keeps one
+// Go type for one schema instead of copying its fields. An inline member has
+// no type of its own, so its properties become fields of this struct, ahead
+// of the schema's own. Field names are deduplicated across all of them.
+//
+// The type and validation emitters both read this layout, so a field is
+// checked under exactly the name it was declared with.
+func structItems(ws *workspace.Workspace, s *spec.Schema) []structItem {
+	fields := naming.NewDeduper()
+	var out []structItem
+	declare := func(from *spec.Schema) {
+		for _, p := range from.Properties {
+			out = append(out, structItem{
+				prop: p,
+				name: fields.Take(naming.Exported(p.Name)),
+			})
+		}
+	}
+	for _, member := range s.AllOf {
+		if !member.Named() {
+			declare(member)
+			continue
+		}
+		// An embedded field is named for its type, unqualified.
+		name := fields.Take(ws.GoName(member))
+		out = append(out, structItem{embed: member, name: name})
+	}
+	declare(s)
+	return out
 }
 
 // requiredNames lists the wire names of a schema's required properties,
@@ -375,20 +434,57 @@ func requiredNames(s *spec.Schema) []string {
 //
 // Go cannot otherwise tell a field the client omitted from one it sent as the
 // zero value, and reporting a deliberate 0 or "" as missing would be wrong.
-func (e *typeEmitter) unmarshalJSON(f *File, name string, required []string) {
+//
+// decoders names the embedded members that have a decoder of their own. Each
+// is called in turn so it records its own absent keys, which its Validate
+// reports.
+func (e *typeEmitter) unmarshalJSON(
+	f *File, name string, required, decoders []string,
+) {
 	jsonPkg := f.Import("encoding/json")
 	recv := "x"
 
 	f.Comment("UnmarshalJSON decodes " + name +
 		" and records which required properties were absent.")
 	f.P("func (%s *%s) UnmarshalJSON(data []byte) error {", recv, name)
-	f.P("\t// The alias drops this method, so decoding does not recurse.")
-	f.P("\ttype alias %s", name)
-	f.P("\tvar decoded alias")
-	f.P("\tif err := %s.Unmarshal(data, &decoded); err != nil {", jsonPkg)
-	f.P("\t\treturn err")
-	f.P("\t}")
-	f.P("\t*%s = %s(decoded)\n", recv, name)
+	if len(decoders) == 0 {
+		f.P("\t// The alias drops this method, so decoding does not recurse.")
+		f.P("\ttype alias %s", name)
+		f.P("\tvar decoded alias")
+		f.P("\tif err := %s.Unmarshal(data, &decoded); err != nil {",
+			jsonPkg)
+		f.P("\t\treturn err")
+		f.P("\t}")
+		f.P("\t*%s = %s(decoded)\n", recv, name)
+	} else {
+		// The alias drops this method but not one promoted from an embedded
+		// member, which would decode the whole body into that member alone
+		// and leave every other field at its zero value. A field of the same
+		// name, shallower than the promoted method, shadows it, so the
+		// wrapper is decoded field by field, the embedded ones included.
+		f.P("\ttype alias %s", name)
+		f.P("\tvar decoded struct {")
+		f.P("\t\talias")
+		f.P("\t\tUnmarshalJSON struct{} `json:\"-\"`")
+		f.P("\t}")
+		f.P("\tif err := %s.Unmarshal(data, &decoded); err != nil {",
+			jsonPkg)
+		f.P("\t\treturn err")
+		f.P("\t}")
+		f.P("\t*%s = %s(decoded.alias)\n", recv, name)
+		for _, d := range decoders {
+			f.P("\tif err := %s.%s.UnmarshalJSON(data); err != nil {",
+				recv, d)
+			f.P("\t\treturn err")
+			f.P("\t}")
+		}
+		if len(required) == 0 {
+			f.P("\treturn nil")
+			f.P("}\n")
+			return
+		}
+		f.P("")
+	}
 	f.P("\tvar present map[string]%s.RawMessage", jsonPkg)
 	f.P("\tif err := %s.Unmarshal(data, &present); err != nil {", jsonPkg)
 	f.P("\t\treturn err")
@@ -407,41 +503,39 @@ func (e *typeEmitter) unmarshalJSON(f *File, name string, required []string) {
 	f.P("}\n")
 }
 
-func (e *typeEmitter) structFields(
+// structField declares one property as a field named goName.
+func (e *typeEmitter) structField(
 	f *File,
-	s *spec.Schema,
+	p *spec.Property,
+	goName string,
 	owner string,
-	fields *naming.Deduper,
 ) error {
-	for _, p := range s.Properties {
-		goName := fields.Take(naming.Exported(p.Name))
-		expr, err := e.typeOf(f, p.Schema, owner, naming.Exported(p.Name))
-		if err != nil {
-			return fmt.Errorf("property %q: %w", p.Name, err)
-		}
-
-		// A field is a plain Go type only when it is always present and can
-		// never be null. Everything else is Optional, so a handler can tell
-		// "absent" from "explicitly cleared".
-		tag := strconv.Quote(p.Name)
-		if !p.Required || p.Schema.Nullable {
-			expr = fmt.Sprintf(
-				"%s.Optional[%s]",
-				f.Import(OptionalImport),
-				expr,
-			)
-			tag = strconv.Quote(p.Name + ",omitzero")
-		}
-
-		if desc := p.Schema.Description; desc != "" && !p.Schema.Named() {
-			f.P("\t// %s %s", goName, lowerFirstWord(firstLine(desc)))
-		}
-		if p.Schema.Deprecated {
-			f.P("\t// Deprecated: this property is marked deprecated in " +
-				"the API specification.")
-		}
-		f.P("\t%s %s `json:%s`", goName, expr, tag)
+	expr, err := e.typeOf(f, p.Schema, owner, naming.Exported(p.Name))
+	if err != nil {
+		return fmt.Errorf("property %q: %w", p.Name, err)
 	}
+
+	// A field is a plain Go type only when it is always present and can
+	// never be null. Everything else is Optional, so a handler can tell
+	// "absent" from "explicitly cleared".
+	tag := strconv.Quote(p.Name)
+	if !p.Required || p.Schema.Nullable {
+		expr = fmt.Sprintf(
+			"%s.Optional[%s]",
+			f.Import(OptionalImport),
+			expr,
+		)
+		tag = strconv.Quote(p.Name + ",omitzero")
+	}
+
+	if desc := p.Schema.Description; desc != "" && !p.Schema.Named() {
+		f.P("\t// %s %s", goName, lowerFirstWord(firstLine(desc)))
+	}
+	if p.Schema.Deprecated {
+		f.P("\t// Deprecated: this property is marked deprecated in " +
+			"the API specification.")
+	}
+	f.P("\t%s %s `json:%s`", goName, expr, tag)
 	return nil
 }
 

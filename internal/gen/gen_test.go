@@ -658,8 +658,23 @@ func section(t *testing.T, src, prefix string) string {
 // and does not compile, which is how both bugs below went unnoticed.
 func compiles(t *testing.T, out map[string]string) {
 	t.Helper()
+	goCommand(t, out, nil, "build", "./...")
+}
+
+// passes runs extra -- hand-written files, keyed by path like out -- as Go
+// tests against the generated code, for behaviour no amount of reading the
+// source would prove.
+func passes(t *testing.T, out, extra map[string]string) {
+	t.Helper()
+	goCommand(t, out, extra, "test", "./...")
+}
+
+// goCommand writes out and extra as one module beside the local runtime
+// module and runs the go command on it.
+func goCommand(t *testing.T, out, extra map[string]string, args ...string) {
+	t.Helper()
 	if testing.Short() {
-		t.Skip("compiles the generated code with the go toolchain")
+		t.Skip("runs the go toolchain on the generated code")
 	}
 	runtimeDir, err := filepath.Abs(filepath.Join("..", "..", "runtime"))
 	if err != nil {
@@ -677,6 +692,9 @@ func compiles(t *testing.T, out map[string]string) {
 			files[name] = body
 		}
 	}
+	for name, body := range extra {
+		files[name] = body
+	}
 	for name, body := range files {
 		p := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -686,11 +704,11 @@ func compiles(t *testing.T, out map[string]string) {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.CommandContext(t.Context(), "go", "build", "./...")
+	cmd := exec.CommandContext(t.Context(), "go", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
 	if b, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("generated code does not compile: %v\n%s", err, b)
+		t.Fatalf("go %s: %v\n%s", strings.Join(args, " "), err, b)
 	}
 }
 
@@ -787,6 +805,88 @@ paths:
 		}
 	}
 	compiles(t, out)
+}
+
+// A struct embedding a named member that decodes itself -- one with required
+// fields to track -- used to inherit that member's UnmarshalJSON, so the
+// whole body decoded into the member and every other field stayed zero. It
+// now decodes all of them, and the member still records its own absences.
+func TestEmbeddedDecoderDoesNotSwallowTheBody(t *testing.T) {
+	out, err := generate(t, oneService(pathsFor(`    Base:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+    Video:
+      allOf:
+        - $ref: '#/components/schemas/Base'
+        - type: object
+          required: [title]
+          properties:
+            title: { type: string }
+    Note:
+      allOf:
+        - $ref: '#/components/schemas/Base'
+        - type: object
+          properties:
+            text: { type: string }
+`, "Video", "Note")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	passes(t, out, map[string]string{
+		"gen/api/decode_test.go": `package api
+
+import (
+	"encoding/json"
+	"slices"
+	"testing"
+)
+
+func TestOwnFieldsDecode(t *testing.T) {
+	var v Video
+	if err := json.Unmarshal([]byte("{\"title\": \"t\"}"), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Title != "t" {
+		t.Errorf("Title = %q, want \"t\"", v.Title)
+	}
+	if !slices.Equal(v.Base.missingFields, []string{"id"}) {
+		t.Errorf("Base missing = %q, want [id]", v.Base.missingFields)
+	}
+	if len(v.missingFields) > 0 {
+		t.Errorf("Video missing = %q, want none", v.missingFields)
+	}
+}
+
+func TestEmbeddedFieldsDecode(t *testing.T) {
+	var v Video
+	err := json.Unmarshal([]byte("{\"id\": \"a\"}"), &v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.ID != "a" {
+		t.Errorf("ID = %q, want \"a\"", v.ID)
+	}
+	if !slices.Equal(v.missingFields, []string{"title"}) {
+		t.Errorf("Video missing = %q, want [title]", v.missingFields)
+	}
+}
+
+// Note has no required field of its own, so it needs a decoder only to keep
+// Base's from being promoted onto it.
+func TestDecoderOnlyForTheMember(t *testing.T) {
+	var n Note
+	err := json.Unmarshal([]byte("{\"id\": \"a\", \"text\": \"x\"}"), &n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := n.Text.Get(); n.ID != "a" || got != "x" {
+		t.Errorf("Note = {ID: %q, Text: %q}, want {a, x}", n.ID, got)
+	}
+}
+`,
+	})
 }
 
 // A property whose only constraint is a custom rule is checked by the rule,
