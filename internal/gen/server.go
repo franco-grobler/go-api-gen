@@ -130,14 +130,103 @@ func (e *serverEmitter) handlerInterface(ops []*operation) {
 		"stands, and anything else becomes a 500 with its detail withheld.")
 	e.file.P("type Handler interface {")
 	for _, o := range ops {
-		if doc := o.op.Summary; doc != "" {
-			e.file.P("\t// %s %s", o.name, lowerFirstWord(firstLine(doc)))
-		}
+		e.methodDoc(o)
 		e.file.P("\t%s(ctx %s.Context, req %s) (%s, error)",
 			o.name, e.ctxPkg, o.request, e.resultType(o))
 		e.file.P("")
 	}
 	e.file.P("}\n")
+}
+
+// methodDoc documents a Handler method with the operation's summary and
+// description, then an example request and response: what the handler is
+// given and what it should produce.
+//
+// The summary is kept as written rather than folded into a sentence that
+// starts with the method name, since summaries are usually imperative
+// ("Create an assistant") and lower-casing one does not make it read as
+// "CreateAssistant creates an assistant".
+func (e *serverEmitter) methodDoc(o *operation) {
+	summary := strings.Join(strings.Fields(o.op.Summary), " ")
+	desc := strings.TrimSpace(o.op.Description)
+	request, response := e.examples(o)
+	if summary == "" && desc == "" && request.Text == "" &&
+		response.Text == "" {
+		return
+	}
+
+	if summary != "" {
+		e.file.CommentIn("\t", o.name+": "+summary)
+	} else {
+		e.file.CommentIn("\t", fmt.Sprintf("%s handles %s %s.",
+			o.name, o.op.Method, o.op.Path))
+	}
+	if desc != "" && desc != summary {
+		e.file.P("\t//")
+		e.file.CommentIn("\t", desc)
+	}
+	e.exampleBlock("Example request", request)
+	e.exampleBlock("Example response", response)
+}
+
+// exampleBlock writes a sample as a code block under a heading, or nothing
+// when there is no sample.
+func (e *serverEmitter) exampleBlock(heading string, s spec.Sample) {
+	if s.Text == "" {
+		return
+	}
+	if s.Title != "" {
+		heading += " (" + s.Title + ")"
+	}
+	e.file.P("\t//")
+	e.file.P("\t// %s:", heading)
+	e.file.P("\t//")
+	for _, line := range strings.Split(s.Text, "\n") {
+		if strings.TrimSpace(line) == "" {
+			e.file.P("\t//")
+			continue
+		}
+		e.file.P("\t//\t%s", line)
+	}
+}
+
+// examples picks one request and one response example for an operation. The
+// standard places come first, the JSON request body and the success response,
+// and the workspace's examples block fills in whichever side they leave
+// empty. One of each is plenty to show the shape; the specification has the
+// rest.
+func (e *serverEmitter) examples(o *operation) (request, response spec.Sample) {
+	if m := o.op.RequestBody.JSON(); m != nil && len(m.Examples) > 0 {
+		request = m.Examples[0]
+	}
+	if m := o.success.JSON(); m != nil && len(m.Examples) > 0 {
+		response = m.Examples[0]
+	}
+	cfg := e.svc.Cfg.Examples
+	if cfg == nil {
+		return request, response
+	}
+	found := o.op.Examples(&spec.ExampleKeys{
+		Path:     cfg.PathKeys,
+		Title:    cfg.TitleKeys,
+		Request:  cfg.RequestKeys,
+		Response: cfg.ResponseKeys,
+	})
+	for _, ex := range found {
+		if request.Text == "" && ex.Request != "" {
+			request = spec.Sample{Title: ex.Title, Text: ex.Request}
+		}
+		if response.Text == "" && ex.Response != "" {
+			// The title is said once, on the request, when both come from
+			// the same example.
+			title := ex.Title
+			if request.Title == ex.Title {
+				title = ""
+			}
+			response = spec.Sample{Title: title, Text: ex.Response}
+		}
+	}
+	return request, response
 }
 
 // resultType is what a handler returns on success.

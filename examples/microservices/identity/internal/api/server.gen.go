@@ -21,7 +21,7 @@ import (
 // fail: an *apierr.Problem is rendered as it stands, and anything else
 // becomes a 500 with its detail withheld.
 type Handler interface {
-	// GetUser fetch one user
+	// GetUser: Fetch one user
 	GetUser(ctx context.Context, req GetUserRequest) (*apitypes.User, error)
 }
 

@@ -141,6 +141,10 @@ type Config struct {
 	Errors  ErrorsConfig           `mapstructure:"errors"`
 	Unified *UnifiedConfig         `mapstructure:"unified"`
 
+	// Examples is where operations keep examples beyond the standard ones,
+	// which a service may override with its own.
+	Examples *ExamplesConfig `mapstructure:"examples"`
+
 	// Path is the absolute path of the config file, and Dir its directory.
 	// Every relative path in the file is resolved against Dir.
 	Path string `mapstructure:"-"`
@@ -190,6 +194,10 @@ type Service struct {
 	Package  string   `mapstructure:"package"`
 	Generate []Target `mapstructure:"generate"`
 
+	// Examples is the workspace's examples block unless the service declares
+	// its own. Nil when neither does.
+	Examples *ExamplesConfig `mapstructure:"examples"`
+
 	// AbsSpec and AbsTo are Spec and To resolved against Config.Dir.
 	AbsSpec string `mapstructure:"-"`
 	AbsTo   string `mapstructure:"-"`
@@ -197,7 +205,9 @@ type Service struct {
 	// ownTargets records that the service declared its own target list, so an
 	// unknown target is reported once, against the place it was written,
 	// rather than once per service that inherited the workspace default.
-	ownTargets bool
+	// ownExamples does the same for the examples block.
+	ownTargets  bool
+	ownExamples bool
 }
 
 // Generates reports whether this service emits the given target.
@@ -226,6 +236,88 @@ type ErrorsConfig struct {
 	TypeBaseURL string `mapstructure:"type_base_url"`
 	// ValidationTitle overrides the default title for validation failures.
 	ValidationTitle string `mapstructure:"validation_title"`
+}
+
+// ExamplesConfig locates examples that a document keeps outside the places
+// OpenAPI defines for them, such as OpenAI's x-oaiMeta.examples, so they can
+// be documented alongside the standard ones.
+//
+// Each field is a dot-separated path. A segment that contains a dot is
+// written in double quotes, as in request."node.js", and a segment that is a
+// number indexes a list.
+type ExamplesConfig struct {
+	// Path leads from each operation to one example or a list of them.
+	Path string `mapstructure:"path"`
+	// Title, Request, and Response lead from each example to its parts.
+	Title    string `mapstructure:"title"`
+	Request  string `mapstructure:"request"`
+	Response string `mapstructure:"response"`
+
+	// The paths above, split into keys by validation.
+	PathKeys     []string `mapstructure:"-"`
+	TitleKeys    []string `mapstructure:"-"`
+	RequestKeys  []string `mapstructure:"-"`
+	ResponseKeys []string `mapstructure:"-"`
+}
+
+// parse splits every path into keys, reporting each that does not parse.
+func (e *ExamplesConfig) parse(where string, add func(string, ...any)) {
+	for _, f := range []struct {
+		name string
+		path string
+		keys *[]string
+	}{
+		{"path", e.Path, &e.PathKeys},
+		{"title", e.Title, &e.TitleKeys},
+		{"request", e.Request, &e.RequestKeys},
+		{"response", e.Response, &e.ResponseKeys},
+	} {
+		keys, err := splitPath(f.path)
+		if err != nil {
+			add("%s.%s: %v", where, f.name, err)
+		}
+		*f.keys = keys
+	}
+}
+
+// splitPath splits a dot-separated path into its keys, unquoting any segment
+// written in double quotes.
+func splitPath(path string) ([]string, error) {
+	if path == "" {
+		return nil, fmt.Errorf("path is empty")
+	}
+	var keys []string
+	for rest := path; ; {
+		var key string
+		if strings.HasPrefix(rest, `"`) {
+			end := strings.Index(rest[1:], `"`)
+			if end < 0 {
+				return nil, fmt.Errorf("%q: unterminated quote", path)
+			}
+			key, rest = rest[1:end+1], rest[end+2:]
+			if rest != "" && !strings.HasPrefix(rest, ".") {
+				return nil, fmt.Errorf("%q: expected a dot after %q",
+					path, `"`+key+`"`)
+			}
+		} else {
+			end := strings.Index(rest, ".")
+			if end < 0 {
+				end = len(rest)
+			}
+			key, rest = rest[:end], rest[end:]
+		}
+		if key == "" {
+			return nil, fmt.Errorf("%q: empty segment", path)
+		}
+		keys = append(keys, key)
+		if rest == "" {
+			return keys, nil
+		}
+		rest = rest[1:]
+		if rest == "" {
+			return nil, fmt.Errorf("%q: empty segment", path)
+		}
+	}
 }
 
 // UnifiedConfig describes the single stitched-together document produced by
@@ -459,11 +551,24 @@ func (c *Config) applyDefaults() {
 			s.Generate = c.Generate
 		}
 		s.Generate = expandTargets(s.Generate)
+		s.ownExamples = s.Examples != nil
+		if s.Examples == nil {
+			s.Examples = c.Examples
+		}
 		c.services = append(c.services, s)
 	}
 	sort.Slice(c.services, func(i, j int) bool {
 		return c.services[i].Name < c.services[j].Name
 	})
+
+	if c.Examples != nil {
+		c.Examples.applyDefaults()
+	}
+	for _, s := range c.services {
+		if s.ownExamples {
+			s.Examples.applyDefaults()
+		}
+	}
 
 	if u := c.Unified; u != nil {
 		u.AbsTo = c.resolve(u.To)
@@ -473,6 +578,20 @@ func (c *Config) applyDefaults() {
 		if u.Version == "" {
 			u.Version = "0.0.0"
 		}
+	}
+}
+
+// applyDefaults names the parts of an example as OpenAI's x-oaiMeta and most
+// hand-rolled layouts do.
+func (e *ExamplesConfig) applyDefaults() {
+	if e.Title == "" {
+		e.Title = "title"
+	}
+	if e.Request == "" {
+		e.Request = "request"
+	}
+	if e.Response == "" {
+		e.Response = "response"
 	}
 }
 
@@ -531,6 +650,9 @@ func (c *Config) validate() error {
 		}
 	}
 	checkTargets("generate", c.Generate)
+	if c.Examples != nil {
+		c.Examples.parse("examples", add)
+	}
 
 	// Output directories must be unique: two generators writing the same
 	// directory would silently clobber each other's files.
@@ -601,6 +723,9 @@ func (c *Config) validate() error {
 		}
 		if s.ownTargets {
 			checkTargets(where+".generate", s.Generate)
+		}
+		if s.ownExamples {
+			s.Examples.parse(where+".examples", add)
 		}
 		claim(s.AbsTo, where)
 	}

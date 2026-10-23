@@ -1327,3 +1327,76 @@ components:
 		}
 	}
 }
+
+// A Handler method is documented with its operation's summary, description,
+// and one example each way. A standard example wins over one at the
+// configured path, which fills in only the side the standard leaves empty.
+func TestHandlerDocHasSummaryAndExamples(t *testing.T) {
+	files := securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /pets:
+    post:
+      operationId: createPet
+      summary: Create a pet.
+      description: The pet is created in the caller's store.
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { name: { type: string } } }
+            examples:
+              rex:
+                summary: A dog
+                value: { name: Rex, kind: dog }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { type: object, properties: { id: { type: string } } }
+      x-samples:
+        - title: Configured
+          request: '{"name": "ignored"}'
+          response: |
+            {"id": "pet_1", "name": "Rex"}
+  /pets/{id}:
+    delete:
+      operationId: deletePet
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { "204": { description: ok } }
+`)
+	files["go-api-gen.yaml"] += "    examples:\n      path: x-samples\n"
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := section(t, out["gen/api/server.gen.go"], "type Handler interface")
+	want := `	// CreatePet: Create a pet.
+	//
+	// The pet is created in the caller's store.
+	//
+	// Example request (A dog):
+	//
+	//	{
+	//	  "name": "Rex",
+	//	  "kind": "dog"
+	//	}
+	//
+	// Example response (Configured):
+	//
+	//	{
+	//	  "id": "pet_1",
+	//	  "name": "Rex"
+	//	}
+	CreatePet(`
+	if !strings.Contains(doc, want) {
+		t.Errorf("want\n%s\nin\n%s", want, doc)
+	}
+	// An operation with nothing to say gets no comment at all.
+	if strings.Contains(doc, "// DeletePet") {
+		t.Errorf("an undocumented operation should have no comment:\n%s", doc)
+	}
+	compiles(t, out)
+}

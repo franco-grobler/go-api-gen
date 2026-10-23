@@ -420,3 +420,87 @@ unified:
 		t.Error("exclude did not match the service it names")
 	}
 }
+
+func TestSplitPath(t *testing.T) {
+	for path, want := range map[string]string{
+		"x-oaiMeta.examples": "x-oaiMeta|examples",
+		`request."node.js"`:  "request|node.js",
+		`"a.b"`:              "a.b",
+		"examples.0.value":   "examples|0|value",
+		"single":             "single",
+		"":                   "error",
+		"a..b":               "error",
+		"a.":                 "error",
+		".a":                 "error",
+		`a."b`:               "error",
+		`"a"b`:               "error",
+	} {
+		keys, err := splitPath(path)
+		got := strings.Join(keys, "|")
+		if err != nil {
+			got = "error"
+		}
+		if got != want {
+			t.Errorf("splitPath(%q) = %s, want %s", path, got, want)
+		}
+	}
+}
+
+// A service inherits the workspace's examples block unless it declares one,
+// and a part left unnamed gets the conventional key.
+func TestExamplesInheritAndDefault(t *testing.T) {
+	p := workspace(t, `
+version: 1
+examples:
+  path: x-oaiMeta.examples
+  request: request.curl
+services:
+  billing:
+    spec: billing.yaml
+    to: billing/api
+  identity:
+    spec: identity.yaml
+    to: identity/api
+    examples:
+      path: x-samples
+`, "billing.yaml", "identity.yaml")
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	billing, identity := c.Services["billing"], c.Services["identity"]
+	for _, tc := range []struct {
+		name string
+		got  []string
+		want string
+	}{
+		{"billing path", billing.Examples.PathKeys, "x-oaiMeta|examples"},
+		{"billing request", billing.Examples.RequestKeys, "request|curl"},
+		{"billing response", billing.Examples.ResponseKeys, "response"},
+		{"identity path", identity.Examples.PathKeys, "x-samples"},
+		{"identity request", identity.Examples.RequestKeys, "request"},
+		{"identity title", identity.Examples.TitleKeys, "title"},
+	} {
+		if got := strings.Join(tc.got, "|"); got != tc.want {
+			t.Errorf("%s = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestExamplesPathErrorNamesItsPlace(t *testing.T) {
+	p := workspace(t, `
+version: 1
+services:
+  billing:
+    spec: billing.yaml
+    to: billing/api
+    examples:
+      path: x-oaiMeta..examples
+`, "billing.yaml")
+	_, err := Load(p)
+	if err == nil || !strings.Contains(err.Error(),
+		"services.billing.examples.path") {
+		t.Fatalf("err = %v, want one naming services.billing.examples.path",
+			err)
+	}
+}

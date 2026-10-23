@@ -108,22 +108,28 @@ const commentWidth = 77
 
 // Comment writes text as a doc comment, wrapping long paragraphs and skipping
 // empty input so that a schema without a description produces no stray "//".
-func (f *File) Comment(text string) {
+func (f *File) Comment(text string) { f.CommentIn("", text) }
+
+// CommentIn is Comment for a comment inside a block, such as a method of an
+// interface, with each line indented by indent. The indent counts against
+// the width as a tab stop of four.
+func (f *File) CommentIn(indent, text string) {
+	width := commentWidth - 4*strings.Count(indent, "\t")
 	for _, para := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
 		if para == "" {
-			f.P("//")
+			f.P("%s//", indent)
 			continue
 		}
 		line := "//"
 		for _, word := range strings.Fields(para) {
-			if len(line)+1+len(word) > commentWidth && line != "//" {
-				f.P("%s", line)
+			if len(line)+1+len(word) > width && line != "//" {
+				f.P("%s%s", indent, line)
 				line = "// " + word
 				continue
 			}
 			line += " " + word
 		}
-		f.P("%s", line)
+		f.P("%s%s", indent, line)
 	}
 }
 

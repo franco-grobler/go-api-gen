@@ -73,6 +73,10 @@ type Operation struct {
 	// how it opts out of a document-wide default.
 	Security    []Requirement
 	HasSecurity bool
+
+	// node is the operation object as written, for reading what the model
+	// does not, such as examples kept under an extension.
+	node *yaml.Node
 }
 
 // Params returns the parameters in a given location, preserving order.
@@ -124,6 +128,7 @@ type RequestBody struct {
 type MediaType struct {
 	MediaType string
 	Schema    *Schema
+	Examples  []Sample // example, or each of examples in order
 	Pos       pos
 }
 
@@ -361,7 +366,9 @@ func (l *Loader) operation(
 	keyNode,
 	n *yaml.Node,
 ) (*Operation, error) {
-	op := &Operation{Method: method, Path: path, Pos: at(file, keyNode)}
+	op := &Operation{
+		Method: method, Path: path, Pos: at(file, keyNode), node: n,
+	}
 	var err error
 
 	f := &fields{file: file}
@@ -505,10 +512,13 @@ func (l *Loader) content(file string, n *yaml.Node) ([]*MediaType, error) {
 		if err != nil {
 			return fmt.Errorf("content %q: %w", name, err)
 		}
-		out = append(
-			out,
-			&MediaType{MediaType: name, Schema: s, Pos: at(file, kn)},
-		)
+		examples, err := l.mediaExamples(file, v)
+		if err != nil {
+			return fmt.Errorf("content %q: examples: %w", name, err)
+		}
+		out = append(out, &MediaType{
+			MediaType: name, Schema: s, Examples: examples, Pos: at(file, kn),
+		})
 		return nil
 	})
 	return out, err

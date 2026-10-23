@@ -20,10 +20,10 @@ import (
 // fail: an *apierr.Problem is rendered as it stands, and anything else
 // becomes a 500 with its detail withheld.
 type Handler interface {
-	// ListInvoices list every invoice
+	// ListInvoices: List every invoice
 	ListInvoices(ctx context.Context, req ListInvoicesRequest) (*[]Invoice, error)
 
-	// CreateInvoice raise an invoice
+	// CreateInvoice: Raise an invoice
 	CreateInvoice(ctx context.Context, req CreateInvoiceRequest) (*Invoice, error)
 }
 

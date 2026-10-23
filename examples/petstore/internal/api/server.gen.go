@@ -22,13 +22,13 @@ import (
 // fail: an *apierr.Problem is rendered as it stands, and anything else
 // becomes a 500 with its detail withheld.
 type Handler interface {
-	// ListPets list all pets
+	// ListPets: List all pets
 	ListPets(ctx context.Context, req ListPetsRequest) (*Pets, error)
 
-	// CreatePets create a pet
+	// CreatePets: Create a pet
 	CreatePets(ctx context.Context, req CreatePetsRequest) (*Pet, error)
 
-	// ShowPetByID info for a specific pet
+	// ShowPetByID: Info for a specific pet
 	ShowPetByID(ctx context.Context, req ShowPetByIDRequest) (*Pet, error)
 }
 
