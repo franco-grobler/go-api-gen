@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.16.0/.schema/devbox.schema.json",
+  "packages": [
+    "go@1.27.1",
+    "just@1.58.0",
+    "git-cliff@2.13.1",
+    "committed@1.1.11",
+    "mdbook@0.5.4",
+    "pre-commit@4.6.2"
+  ],
+  "shell": {
+    "scripts": {
+      "check": "just",
+      "docs": "just docs",
+      "test": "just test"
+    }
+  }
+}

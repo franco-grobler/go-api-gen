@@ -37,7 +37,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Keep in step with commits.yml.
+  # Keep in step with commits.yml and devbox.json.
   GIT_CLIFF_VERSION: 2.13.1
 
 jobs:

@@ -1,5 +1,6 @@
 # Development entry points. CI runs the same commands; see
-# .github/workflows/ci.yml.
+# .github/workflows/ci.yml. Every tool they use but the linter comes from
+# devbox: `devbox shell`, or prefix a recipe with `devbox run --`.
 
 go := env('GO', 'go')
 gobin := justfile_directory() / '.bin'
