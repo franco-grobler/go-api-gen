@@ -1400,3 +1400,174 @@ paths:
 	}
 	compiles(t, out)
 }
+
+// An array or object parameter is read as its style lays it out, with
+// OpenAPI's defaults: a query parameter is form and exploded, a path or
+// header parameter simple and not. Each element is converted to its type and
+// located by index or key when it fails.
+func TestStructuredParametersDecode(t *testing.T) {
+	files := securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /search/{ids}:
+    get:
+      operationId: search
+      parameters:
+        - { name: ids, in: path, required: true,
+            schema: { type: array, items: { type: integer } } }
+        - { name: "tags[]", in: query,
+            schema: { type: array, items: { type: string, enum: [a, b] } } }
+        - { name: sizes, in: query, explode: false,
+            schema: { type: array, items: { type: integer } } }
+        - { name: kinds, in: query, style: pipeDelimited,
+            schema: { type: array, items: { type: string } } }
+        - { name: metadata, in: query, style: deepObject,
+            schema: { type: object,
+                      additionalProperties: { type: string } } }
+        - { name: range, in: query, required: true,
+            schema: { type: object, required: [lo],
+                      properties: { lo: { type: integer },
+                                    hi: { type: integer } } } }
+        - { name: point, in: query, explode: false,
+            schema: { type: object,
+                      properties: { x: { type: integer },
+                                    y: { type: integer } } } }
+        - { name: X-Trace, in: header,
+            schema: { type: array, items: { type: string } } }
+      responses: { "204": { description: ok } }
+`)
+	out, err := generate(t, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passes(t, out, map[string]string{
+		"gen/api/params_test.go": `package api
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+type handler struct{ got SearchRequest }
+
+func (h *handler) Search(
+	_ context.Context, req SearchRequest,
+) (struct{}, error) {
+	h.got = req
+	return struct{}{}, nil
+}
+
+func serve(
+	t *testing.T, target string, header http.Header,
+) (*handler, *httptest.ResponseRecorder) {
+	t.Helper()
+	h := &handler{}
+	r := httptest.NewRequest("GET", target, nil)
+	for k, vs := range header {
+		r.Header[k] = vs
+	}
+	w := httptest.NewRecorder()
+	NewServer(h).ServeHTTP(w, r)
+	return h, w
+}
+
+func TestEveryStyleDecodes(t *testing.T) {
+	h, w := serve(t, "/search/1,2?tags[]=a&tags[]=b&sizes=3,4&kinds=x|y"+
+		"&metadata[team]=core&metadata[env]=prod&lo=1&hi=9&point=x,5,y,6",
+		http.Header{"X-Trace": {"t1,t2"}})
+	if w.Code != 204 {
+		t.Fatalf("status %d: %s", w.Code, w.Body)
+	}
+	q := h.got.Query
+	if got := h.got.Path.Ids; !reflect.DeepEqual(got, []int{1, 2}) {
+		t.Errorf("ids = %v", got)
+	}
+	if got, _ := q.Tags.Get(); !reflect.DeepEqual(got,
+		[]SearchQueryParamsTagsItem{"a", "b"}) {
+		t.Errorf("tags = %v", got)
+	}
+	if got, _ := q.Sizes.Get(); !reflect.DeepEqual(got, []int{3, 4}) {
+		t.Errorf("sizes = %v", got)
+	}
+	if got, _ := q.Kinds.Get(); !reflect.DeepEqual(got, []string{"x", "y"}) {
+		t.Errorf("kinds = %v", got)
+	}
+	if got, _ := q.Metadata.Get(); !reflect.DeepEqual(got,
+		map[string]string{"team": "core", "env": "prod"}) {
+		t.Errorf("metadata = %v", got)
+	}
+	if hi, _ := q.Range.Hi.Get(); q.Range.Lo != 1 || hi != 9 {
+		t.Errorf("range = %+v", q.Range)
+	}
+	p, _ := q.Point.Get()
+	if x, _ := p.X.Get(); x != 5 {
+		t.Errorf("point = %+v", p)
+	}
+	if got, _ := h.got.Header.XTrace.Get(); !reflect.DeepEqual(got,
+		[]string{"t1", "t2"}) {
+		t.Errorf("X-Trace = %v", got)
+	}
+}
+
+// Every failure is reported, each where it happened, in one response.
+func TestEachFailureIsLocated(t *testing.T) {
+	_, w := serve(t, "/search/1,z?tags[]=a&tags[]=c&hi=x&point=x,1,y", nil)
+	if w.Code != 422 {
+		t.Fatalf("status %d, want 422: %s", w.Code, w.Body)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		` + "`" + `"loc":["path","ids",1]` + "`" + `,
+		` + "`" + `"loc":["query","tags[]",1]` + "`" + `,
+		` + "`" + `"loc":["query","range","lo"]` + "`" + `,
+		` + "`" + `"loc":["query","range","hi"]` + "`" + `,
+		` + "`" + `"loc":["query","point"]` + "`" + `,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("want %s in %s", want, body)
+		}
+	}
+}
+
+// A required object with none of its keys sent is missing as a whole.
+func TestAbsentObjectIsMissing(t *testing.T) {
+	_, w := serve(t, "/search/1", nil)
+	want := ` + "`" + `"loc":["query","range"]` + "`" + `
+	if !strings.Contains(w.Body.String(), want) {
+		t.Errorf("want range reported missing: %s", w.Body)
+	}
+}
+`,
+	})
+}
+
+// A shape with no defined string form is refused while generating, not left
+// for the compiler to trip over.
+func TestUnsupportedParameterShapeIsRejected(t *testing.T) {
+	_, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /x:
+    get:
+      operationId: x
+      parameters:
+        - { name: grid, in: query,
+            schema: { type: array,
+                      items: { type: array, items: { type: integer } } } }
+      responses: { "204": { description: ok } }
+`))
+	if err == nil {
+		t.Fatal("generation succeeded, want an unsupported-shape error")
+	}
+	for _, want := range []string{`"grid"`, "not supported yet"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v\nwant it to mention %s", err, want)
+		}
+	}
+}

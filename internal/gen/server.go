@@ -240,7 +240,7 @@ func (e *serverEmitter) resultType(o *operation) string {
 func (e *serverEmitter) requestTypes(ops []*operation) {
 	for _, o := range ops {
 		path := o.op.Params("path")
-		query := o.op.Params("query")
+		query := o.op.Params(inQuery)
 		header := o.op.Params("header")
 		body := o.op.RequestBody.JSON()
 
@@ -392,7 +392,7 @@ func (e *serverEmitter) errorOptions() {
 // for one operation.
 func (e *serverEmitter) handler(o *operation) error {
 	path := o.op.Params("path")
-	query := o.op.Params("query")
+	query := o.op.Params(inQuery)
 	header := o.op.Params("header")
 	body := o.op.RequestBody.JSON()
 
@@ -418,18 +418,25 @@ func (e *serverEmitter) handler(o *operation) error {
 	e.file.P("\t\tv := %s.New()", e.validatePkg)
 
 	for _, p := range path {
-		e.decodeParam(p, "Path", fmt.Sprintf("r.PathValue(%q)",
-			p.Name), "\t\t")
+		src := fmt.Sprintf("r.PathValue(%q)", p.Name)
+		if err := e.decodeParam(o, p, "Path", src); err != nil {
+			return err
+		}
 	}
 	if len(query) > 0 {
 		e.file.P("\t\tq := r.URL.Query()")
 		for _, p := range query {
-			e.decodeParam(p, "Query", fmt.Sprintf("q.Get(%q)", p.Name), "\t\t")
+			src := fmt.Sprintf("q.Get(%q)", p.Name)
+			if err := e.decodeParam(o, p, "Query", src); err != nil {
+				return err
+			}
 		}
 	}
 	for _, p := range header {
-		e.decodeParam(p, "Header",
-			fmt.Sprintf("r.Header.Get(%q)", p.Name), "\t\t")
+		src := fmt.Sprintf("r.Header.Get(%q)", p.Name)
+		if err := e.decodeParam(o, p, "Header", src); err != nil {
+			return err
+		}
 	}
 
 	if body != nil && body.Schema != nil {
@@ -508,41 +515,297 @@ func successStatus(o *operation) int {
 	return n
 }
 
-// decodeParam renders the parse for one parameter.
-func (e *serverEmitter) decodeParam(
-	p *spec.Parameter, group, source, ind string,
-) {
-	field := fmt.Sprintf("req.%s.%s", group, naming.Exported(p.Name))
-	part := map[string]string{
-		"path": "Path", "query": "Query",
-		"header": "Header", "cookie": "Cookie",
-	}[p.In]
-	loc := fmt.Sprintf("v.Field(%s.%s).Field(%q)", e.validatePkg, part, p.Name)
+// The parameter location and styles the decoder distinguishes, spelled as
+// the specification spells them.
+const (
+	inQuery     = "query"
+	styleForm   = "form"
+	styleSimple = "simple"
+)
 
-	f := e.file
-	f.P("%sif raw := %s; raw != \"\" {", ind, source)
-	e.parseInto(p.Schema, field, "raw", loc, ind+"\t", !p.Required)
-	if p.Required {
-		f.P("%s} else {", ind)
-		f.P("%s\t%s.Fail(\"missing\", \"Field required\")", ind, loc)
-	}
-	f.P("%s}", ind)
+// paramDecode is what decoding one parameter needs to know about it.
+type paramDecode struct {
+	p      *spec.Parameter
+	s      *spec.Schema // the parameter's schema, unwrapped
+	owner  string       // the parameter struct, which names inline types
+	goName string       // the parameter's field in that struct
+	field  string       // the field, as an expression
+	source string       // the parameter's single raw value, as an expression
+	loc    string       // the parameter's validation location
+	style  string
+	expl   bool
 }
 
-// parseInto renders the conversion from a raw string into a typed field.
+const paramInd = "\t\t"
+
+// decodeParam renders the parse for one parameter: a scalar from its raw
+// value, and an array or an object from the strings its style lays out.
+func (e *serverEmitter) decodeParam(
+	o *operation, p *spec.Parameter, group, source string,
+) error {
+	part := map[string]string{
+		"path": "Path", inQuery: "Query",
+		"header": "Header", "cookie": "Cookie",
+	}[p.In]
+	d := &paramDecode{
+		p: p,
+		s: unwrap(p.Schema),
+		owner: map[string]string{
+			"path": o.path, inQuery: o.query, "header": o.header,
+		}[p.In],
+		goName: naming.Exported(p.Name),
+		source: source,
+		loc: fmt.Sprintf("v.Field(%s.%s).Field(%q)",
+			e.validatePkg, part, p.Name),
+	}
+	d.field = fmt.Sprintf("req.%s.%s", group, d.goName)
+	d.style, d.expl = paramStyle(p)
+
+	switch classify(d.s) {
+	case kindArray:
+		return e.decodeArray(d)
+	case kindMap, kindStruct:
+		return e.decodeObject(o, d)
+	}
+
+	f := e.file
+	f.P("%sif raw := %s; raw != \"\" {", paramInd, source)
+	e.parseInto(p.Schema, d.field, "raw", d.loc, paramInd+"\t", !p.Required)
+	e.missing(d)
+	f.P("%s}", paramInd)
+	return nil
+}
+
+// paramStyle returns how a parameter is serialized, with OpenAPI's defaults:
+// form for a query parameter, simple elsewhere, and exploded only for form.
+func paramStyle(p *spec.Parameter) (style string, explode bool) {
+	style = p.Style
+	if style == "" {
+		style = styleSimple
+		if p.In == inQuery || p.In == "cookie" {
+			style = styleForm
+		}
+	}
+	explode = style == styleForm
+	if p.Explode != nil {
+		explode = *p.Explode
+	}
+	return style, explode
+}
+
+// missing closes the presence check of a required parameter with its
+// failure. An optional parameter that is absent is simply left unset.
+func (e *serverEmitter) missing(d *paramDecode) {
+	if d.p.Required {
+		e.file.P("%s} else {", paramInd)
+		e.file.P("%s\t%s.Fail(\"missing\", \"Field required\")",
+			paramInd, d.loc)
+	}
+}
+
+func unsupportedParam(d *paramDecode, what string) error {
+	return fmt.Errorf("%s: parameter %q: %s is not supported yet",
+		d.p.Pos, d.p.Name, what)
+}
+
+// isScalar reports whether a schema parses from one string.
+func isScalar(s *spec.Schema) bool {
+	switch classify(unwrap(s)) {
+	case kindArray, kindMap, kindStruct:
+		return false
+	}
+	return true
+}
+
+// decodeArray renders an array parameter: every value of a repeated query
+// parameter when it is exploded, and the pieces of a delimited one when not.
+func (e *serverEmitter) decodeArray(d *paramDecode) error {
+	if !isScalar(d.s.Items) {
+		return unsupportedParam(d, "an array of arrays or objects")
+	}
+	httpx := e.httpxPkg
+	var raws string
+	switch {
+	case d.p.In == inQuery && d.expl &&
+		(d.style == styleForm || d.style == "spaceDelimited" ||
+			d.style == "pipeDelimited"):
+		raws = fmt.Sprintf("q[%q]", d.p.Name)
+	case d.p.In == inQuery && d.style == styleForm:
+		raws = fmt.Sprintf("%s.Split(%s, \",\")", httpx, d.source)
+	case d.p.In == inQuery && d.style == "spaceDelimited":
+		raws = fmt.Sprintf("%s.Split(%s, \" \")", httpx, d.source)
+	case d.p.In == inQuery && d.style == "pipeDelimited":
+		raws = fmt.Sprintf("%s.Split(%s, \"|\")", httpx, d.source)
+	case d.p.In != inQuery && d.style == styleSimple:
+		raws = fmt.Sprintf("%s.Split(%s, \",\")", httpx, d.source)
+	default:
+		return unsupportedParam(d,
+			fmt.Sprintf("an array in %s style", d.style))
+	}
+	elem, err := e.typeOf(d.s.Items, d.owner, d.goName+"Item")
+	if err != nil {
+		return err
+	}
+
+	f, ind := e.file, paramInd
+	f.P("%sif raws := %s; len(raws) > 0 {", ind, raws)
+	f.P("%s\tvals := make([]%s, len(raws))", ind, elem)
+	f.P("%s\tfor i, raw := range raws {", ind)
+	e.convert(d.s.Items, "vals[i]", "raw", d.loc+".Index(i)", ind+"\t\t",
+		false)
+	f.P("%s\t}", ind)
+	e.assign(d.field, "vals", ind+"\t", !d.p.Required)
+	e.missing(d)
+	f.P("%s}", ind)
+	e.check(d.s, d.field, d.loc, ind, !d.p.Required)
+	return nil
+}
+
+// decodeObject renders an object parameter, from the key and value strings
+// its style lays out: name[key]=value for deepObject, a query parameter per
+// property for an exploded form, and delimited pairs otherwise.
+func (e *serverEmitter) decodeObject(o *operation, d *paramDecode) error {
+	isMap := classify(d.s) == kindMap
+	if !isMap {
+		if len(d.s.AllOf) > 0 {
+			return unsupportedParam(d, "an object composed with allOf")
+		}
+		for _, p := range d.s.Properties {
+			if !isScalar(p.Schema) {
+				return unsupportedParam(d, "an object with a nested "+
+					"array or object property")
+			}
+		}
+	} else if v := d.s.AdditionalPro; v != nil && !isScalar(v) {
+		return unsupportedParam(d, "a map of arrays or objects")
+	}
+
+	httpx := e.httpxPkg
+	var src string
+	fallible := false
+	switch {
+	case d.p.In == inQuery && d.style == "deepObject":
+		src = fmt.Sprintf("%s.DeepObject(q, %q)", httpx, d.p.Name)
+	case d.p.In == inQuery && d.style == styleForm && d.expl && !isMap:
+		src = fmt.Sprintf("%s.Pick(q%s)", httpx,
+			quotedArgs(propNames(d.s)))
+	case d.p.In == inQuery && d.style == styleForm && d.expl:
+		// A map's keys are whatever the operation's other query
+		// parameters do not claim.
+		var others []string
+		for _, q := range o.op.Params(inQuery) {
+			if q != d.p {
+				others = append(others, q.Name)
+			}
+		}
+		src = fmt.Sprintf("%s.Rest(q%s)", httpx, quotedArgs(others))
+	case d.p.In == inQuery && d.style == styleForm,
+		d.p.In != inQuery && d.style == styleSimple && !d.expl:
+		src = fmt.Sprintf("%s.Pairs(%s, \",\")", httpx, d.source)
+		fallible = true
+	case d.p.In != inQuery && d.style == styleSimple:
+		src = fmt.Sprintf("%s.KeyValues(%s)", httpx, d.source)
+		fallible = true
+	default:
+		return unsupportedParam(d,
+			fmt.Sprintf("an object in %s style", d.style))
+	}
+	typ, err := e.typeOf(d.s, d.owner, d.goName)
+	if err != nil {
+		return err
+	}
+
+	f, ind := e.file, paramInd
+	if fallible {
+		f.P("%sif m, err := %s; err != nil {", ind, src)
+		f.P("%s\t%s.Fail(\"object_parsing\", "+
+			"\"Input should be a valid object\")", ind, d.loc)
+		f.P("%s} else if len(m) > 0 {", ind)
+	} else {
+		f.P("%sif m := %s; len(m) > 0 {", ind, src)
+	}
+	if isMap {
+		f.P("%s\tval := make(%s, len(m))", ind, typ)
+		f.P("%s\tfor key, raw := range m {", ind)
+		if v := d.s.AdditionalPro; v == nil || v.Empty() {
+			f.P("%s\t\tval[key] = raw", ind)
+		} else {
+			elem, err := e.typeOf(v, d.owner, d.goName+"Value")
+			if err != nil {
+				return err
+			}
+			f.P("%s\t\tvar item %s", ind, elem)
+			e.convert(v, "item", "raw", d.loc+".Field(key)", ind+"\t\t",
+				false)
+			f.P("%s\t\tval[key] = item", ind)
+		}
+		f.P("%s\t}", ind)
+	} else {
+		f.P("%s\tvar val %s", ind, typ)
+		for _, it := range structItems(e.ws, d.s) {
+			p := it.prop
+			loc := fmt.Sprintf("%s.Field(%q)", d.loc, p.Name)
+			f.P("%s\tif raw, ok := m[%q]; ok {", ind, p.Name)
+			e.convert(p.Schema, "val."+it.name, "raw", loc, ind+"\t\t",
+				!p.Required || p.Schema.Nullable)
+			if p.Required {
+				f.P("%s\t} else {", ind)
+				f.P("%s\t\t%s.Fail(\"missing\", \"Field required\")",
+					ind, loc)
+			}
+			f.P("%s\t}", ind)
+		}
+	}
+	e.assign(d.field, "val", ind+"\t", !d.p.Required)
+	e.missing(d)
+	f.P("%s}", ind)
+	e.check(d.s, d.field, d.loc, ind, !d.p.Required)
+	return nil
+}
+
+func propNames(s *spec.Schema) []string {
+	out := make([]string, 0, len(s.Properties))
+	for _, p := range s.Properties {
+		out = append(out, p.Name)
+	}
+	return out
+}
+
+// quotedArgs renders names as trailing arguments: ", "a", "b"".
+func quotedArgs(names []string) string {
+	var b strings.Builder
+	for _, n := range names {
+		fmt.Fprintf(&b, ", %q", n)
+	}
+	return b.String()
+}
+
+// assign stores a parsed value into a field, wrapped when it is optional.
+func (e *serverEmitter) assign(field, expr, ind string, optional bool) {
+	if optional {
+		e.file.P("%s%s = %s.Some(%s)", ind, field,
+			e.file.Import(OptionalImport), expr)
+		return
+	}
+	e.file.P("%s%s = %s", ind, field, expr)
+}
+
+// parseInto renders the conversion from a raw string into a typed field,
+// and then the checks the schema declares on it.
 func (e *serverEmitter) parseInto(s *spec.Schema, field, raw, loc, ind string,
+	optional bool,
+) {
+	e.convert(s, field, raw, loc, ind, optional)
+	e.check(s, field, loc, ind, optional)
+}
+
+// convert renders the conversion from a raw string into a typed field.
+func (e *serverEmitter) convert(s *spec.Schema, field, raw, loc, ind string,
 	optional bool,
 ) {
 	s = unwrap(s)
 	f := e.file
-	assign := func(expr string) {
-		if optional {
-			f.P("%s%s = %s.Some(%s)", ind, field,
-				e.file.Import(OptionalImport), expr)
-			return
-		}
-		f.P("%s%s = %s", ind, field, expr)
-	}
+	assign := func(expr string) { e.assign(field, expr, ind, optional) }
 
 	t, _ := e.gen.mapper.Scalar(s)
 	switch {
@@ -604,8 +867,14 @@ func (e *serverEmitter) parseInto(s *spec.Schema, field, raw, loc, ind string,
 		}
 		assign(fmt.Sprintf("%s(%s)", target, raw))
 	}
+}
 
-	// Constraints declared on the parameter apply once it has a value.
+// check renders the constraints declared on a parameter, which apply once it
+// has a value.
+func (e *serverEmitter) check(s *spec.Schema, field, loc, ind string,
+	optional bool,
+) {
+	s = unwrap(s)
 	if needsCheck(e.gen.mapper, s) {
 		var b strings.Builder
 		if optional {

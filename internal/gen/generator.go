@@ -161,7 +161,7 @@ func (g *Generator) planOperations(
 			// declared a second time when the document also has a
 			// CreateAssistantRequest schema, as OpenAI's does.
 			group := map[string]string{}
-			for _, in := range []string{"path", "query", "header"} {
+			for _, in := range []string{"path", inQuery, "header"} {
 				group[in] = name + naming.Exported(in) + "Params"
 				if len(op.Params(in)) > 0 {
 					group[in] = types.dedupe.Take(group[in])
@@ -176,7 +176,7 @@ func (g *Generator) planOperations(
 			types.opTypes[op] = opTypes{
 				request: types.dedupe.Take(request),
 				path:    group["path"],
-				query:   group["query"],
+				query:   group[inQuery],
 				header:  group["header"],
 			}
 

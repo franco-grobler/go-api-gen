@@ -460,6 +460,12 @@ Under construction. Working today:
 
 `oneOf`/`anyOf` are rejected with a clear error rather than generated badly.
 
+Array and object parameters are read in the styles OpenAPI defines for
+them: `form` (exploded or not), `spaceDelimited`, `pipeDelimited`, and
+`deepObject` in the query, and `simple` in a path or header. An array of
+arrays or objects, an object with an array or object property, and the
+`label` and `matrix` path styles are rejected with a clear error.
+
 One validation gap is **silent** — the constraint is accepted by the parser
 and never applied, so the generated server lets the value through. Do not rely
 on it until this says otherwise: `multipleOf`, `uniqueItems`, `const`, and
