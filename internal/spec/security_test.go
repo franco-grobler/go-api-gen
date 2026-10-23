@@ -254,3 +254,25 @@ components:
 		})
 	}
 }
+
+// A requirement names its scheme instead of referencing it, so the bundle has
+// to keep every declared scheme or the requirements it keeps point at nothing.
+func TestBundleKeepsSecuritySchemes(t *testing.T) {
+	_, doc := bundleOf(t, map[string]string{"a.yaml": securedSpec}, "a.yaml")
+
+	schemes := mapAt(t, doc, "components", "securitySchemes")
+	for _, want := range []string{
+		"bearerAuth", "basicAuth", "apiKeyAuth", "unused", "oauth",
+	} {
+		if _, ok := schemes[want]; !ok {
+			t.Errorf("securityScheme %q missing from the bundle", want)
+		}
+	}
+	bearer := mapAt(t, schemes, "bearerAuth")
+	if bearer["scheme"] != "bearer" || bearer["bearerFormat"] != "JWT" {
+		t.Errorf("bearerAuth = %v, want it copied unchanged", bearer)
+	}
+	if got := sliceAt(t, doc, "security"); len(got) != 1 {
+		t.Errorf("security = %v, want the document's one requirement", got)
+	}
+}

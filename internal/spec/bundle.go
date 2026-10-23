@@ -56,11 +56,18 @@ func (l *Loader) Bundle(d *Document, opts BundleOptions) (*yaml.Node, error) {
 	err = mapEach(root, func(key string, keyNode, val *yaml.Node) error {
 		switch key {
 		case "components":
-			schemas, err := b.components(opts)
+			comps, err := b.components(opts)
 			if err != nil {
 				return err
 			}
-			mapSet(out, "components", schemas)
+			schemes, err := b.securitySchemes(d.File, val)
+			if err != nil {
+				return err
+			}
+			if schemes != nil {
+				mapSet(comps, "securitySchemes", schemes)
+			}
+			mapSet(out, "components", comps)
 			emittedComponents = true
 		default:
 			v, err := b.rewrite(d.File, val)
@@ -106,7 +113,8 @@ type bundler struct {
 
 // components builds the components mapping, holding only schemas. Shared
 // parameters, responses, and request bodies are inlined at their use sites, so
-// nothing else needs to survive into the bundle.
+// nothing else needs to survive into the bundle except security schemes, which
+// the caller adds with securitySchemes.
 func (b *bundler) components(opts BundleOptions) (*yaml.Node, error) {
 	schemas := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
 	for _, c := range opts.Components {
@@ -126,6 +134,27 @@ func (b *bundler) components(opts BundleOptions) (*yaml.Node, error) {
 	comps := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
 	mapSet(comps, "schemas", schemas)
 	return comps, nil
+}
+
+// securitySchemes copies the securitySchemes of a components mapping, or
+// returns nil when it declares none.
+//
+// A security requirement names its scheme rather than referencing it, so a
+// scheme cannot be inlined at its use site the way a shared parameter is. It
+// has to survive as a component, or every requirement naming it dangles.
+func (b *bundler) securitySchemes(
+	file string,
+	components *yaml.Node,
+) (*yaml.Node, error) {
+	n := mapGet(components, "securitySchemes")
+	if n == nil {
+		return nil, nil
+	}
+	v, err := b.rewrite(file, n)
+	if err != nil {
+		return nil, fmt.Errorf("components securitySchemes: %w", err)
+	}
+	return v, nil
 }
 
 // rewrite deep-copies a node, resolving references as it goes.

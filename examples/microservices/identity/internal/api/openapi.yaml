@@ -55,3 +55,9 @@ components:
         UserStatus:
             type: string
             enum: [active, suspended]
+    securitySchemes:
+        bearerAuth:
+            type: http
+            scheme: bearer
+            bearerFormat: opaque
+            description: A token issued by whatever signs tokens here.
