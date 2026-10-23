@@ -2,8 +2,9 @@ name: Commits
 
 # Every commit is a conventional commit of a type cliff.toml allows: the
 # changelog is written from them, so one that is not would be dropped from it
-# or fail the release. git-cliff does the checking, with the same rules it
-# writes the changelog by.
+# or fail the release. committed checks the message's style, per
+# committed.toml, and git-cliff that it can file the commit, by the same rules
+# it writes the changelog with. The commit-msg hook (`just hooks`) runs both.
 on:
   push:
     branches: [main]
@@ -19,8 +20,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Keep in step with prepare-release.yml.
+  # Keep in step with prepare-release.yml and devbox.json.
   GIT_CLIFF_VERSION: 2.13.1
+  # Keep in step with devbox.json.
+  COMMITTED_VERSION: 1.1.11
 
 jobs:
   conventional:
@@ -33,7 +36,9 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: git-cliff@${{ env.GIT_CLIFF_VERSION }}
+          tool: >-
+            git-cliff@${{ env.GIT_CLIFF_VERSION }},
+            committed@${{ env.COMMITTED_VERSION }}
 
       - name: Check the commits
         env:
@@ -50,6 +55,7 @@ jobs:
           else
             range=$BEFORE..$AFTER
           fi
+          committed "$range"
           git cliff --config cliff.toml "$range" -o /dev/null
 
       # A squash merge commits the pull request's title, so it is held to
@@ -58,4 +64,6 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           TITLE: ${{ github.event.pull_request.title }}
-        run: scripts/check-commit-msg.sh -m "$TITLE"
+        run: |
+          printf '%s\n' "$TITLE" | committed --commit-file -
+          scripts/check-commit-msg.sh -m "$TITLE"

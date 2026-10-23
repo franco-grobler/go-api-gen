@@ -1,14 +1,21 @@
-# Install with `just hooks`.
+# Install with `just hooks`. Both tools come from devbox.
 default_install_hook_types:
   - commit-msg
 
 repos:
   - repo: local
     hooks:
-      # The same check CI runs on every commit and pull request title, from
-      # the rules in cliff.toml. Needs git-cliff installed.
-      - id: conventional-commit
-        name: conventional commit
+      # Style: a conventional commit of an allowed type, with a subject and
+      # lines short enough to read, per committed.toml.
+      - id: committed
+        name: committed
+        entry: committed --commit-file
+        language: system
+        stages: [commit-msg]
+      # The changelog: git-cliff can file the commit under cliff.toml's
+      # rules, which are stricter about a type's spelling than committed.
+      - id: changelog
+        name: changelog entry
         entry: scripts/check-commit-msg.sh
         language: script
         stages: [commit-msg]

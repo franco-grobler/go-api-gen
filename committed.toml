@@ -1,0 +1,33 @@
+# committed: https://github.com/crate-ci/committed
+#
+# Lints every commit message: the commit-msg hook (`just hooks`) checks one
+# as it is written, and the Commits workflow checks every commit pushed or
+# proposed, along with a pull request's title, which a squash merge commits.
+#
+# The types are the ones cliff.toml turns into the changelog or skips; keep
+# the two lists in step, since git-cliff fails a release on a type it does
+# not know.
+style = "conventional"
+allowed_types = [
+  "build",
+  "chore",
+  "ci",
+  "docs",
+  "feat",
+  "fix",
+  "perf",
+  "refactor",
+  "revert",
+  "style",
+  "test",
+]
+# The description continues the type, so it starts in lower case: "fix(gen):
+# parse array parameters", not "fix(gen): Parse array parameters".
+subject_capitalized = false
+# A subject may describe the change rather than command it, as in
+# "fix(gen): a request struct yields its name to a schema that has it".
+imperative_subject = false
+subject_length = 72
+# Prose in a body wraps at 72, but a body also quotes code and URLs, which
+# cannot wrap; this bounds those instead.
+line_length = 100

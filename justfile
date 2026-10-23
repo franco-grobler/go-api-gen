@@ -143,9 +143,14 @@ update-openai-spec:
 clean:
     rm -rf {{ gobin }} coverage.out
 
-# Install the commit-msg hook that holds commits to cliff.toml's rules.
+# Install the commit-msg hook that runs committed and git-cliff.
 hooks:
     pre-commit install
+
+# Lint the commits on this branch that main does not have.
+commits base="main":
+    committed {{ base }}..HEAD
+    git cliff --config cliff.toml {{ base }}..HEAD -o /dev/null
 
 # Preview the CHANGELOG.md entry a release cut from HEAD would get.
 release-notes BUMP="auto":
