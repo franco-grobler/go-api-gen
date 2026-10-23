@@ -112,6 +112,11 @@ func (e *typeEmitter) EmitTypes(f *File) error {
 // classify decides how a schema is declared.
 func classify(s *spec.Schema) kind {
 	switch {
+	case s.GoType != "":
+		// A hand-written type stands in for whatever the schema describes,
+		// so it is declared from the type it names, as a mapped scalar is,
+		// rather than as the struct or map its keywords would make.
+		return kindScalar
 	case s.IsEnum():
 		return kindEnum
 	case len(s.OneOf) > 0 || len(s.AnyOf) > 0:

@@ -274,6 +274,9 @@ func (e *validateEmitter) value(b *strings.Builder, s *spec.Schema,
 		// A named schema validates itself, wherever it is used. An alias has
 		// no Validate method, so it falls through to the checks for its value.
 		fmt.Fprintf(b, "%s%s.Validate(%s)\n", indent, expr, loc)
+	case s.GoType != "":
+		// A hand-written type is opaque: the keywords beside x-go-type
+		// describe its JSON, which the type is responsible for.
 	case s.Is("array") && s.Items != nil:
 		e.scalarChecks(b, s, expr, loc, indent)
 		if needsCheck(e.mapper, s.Items) {
@@ -302,6 +305,9 @@ func needsCheck(m *gomap.Mapper, s *spec.Schema) bool {
 	}
 	if s.Named() && !aliased(m, s) {
 		return true
+	}
+	if s.GoType != "" {
+		return false // opaque; see value
 	}
 	// x-validate on an unnamed schema is not counted: its owner calls the
 	// rule as a method (see collectRules), so the value itself has nothing

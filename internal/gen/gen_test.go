@@ -1571,3 +1571,53 @@ paths:
 		}
 	}
 }
+
+// x-go-type replaces whatever the schema describes, an object included: the
+// schema is declared from the hand-written type, and its keywords, which
+// describe that type's JSON, are not checked through a Validate method the
+// type does not have.
+func TestGoTypeReplacesAnObject(t *testing.T) {
+	out, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /x:
+    post:
+      operationId: x
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Envelope' }
+      responses: { "204": { description: ok } }
+components:
+  schemas:
+    Raw:
+      type: object
+      x-go-type: json.RawMessage
+      x-go-import: encoding/json
+      required: [kind]
+      properties:
+        kind: { type: string, minLength: 1 }
+    Envelope:
+      type: object
+      properties:
+        named: { $ref: '#/components/schemas/Raw' }
+        inline:
+          type: object
+          x-go-type: json.RawMessage
+          x-go-import: encoding/json
+          properties:
+            kind: { type: string, minLength: 1 }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	types := normalize(out["gen/api/types.gen.go"])
+	if !strings.Contains(types, "type Raw = json.RawMessage") {
+		t.Errorf("Raw should alias its Go type:\n%s", types)
+	}
+	if strings.Contains(types, "type EnvelopeInline struct") {
+		t.Errorf("an inline x-go-type should not be synthesized:\n%s", types)
+	}
+	compiles(t, out)
+}
