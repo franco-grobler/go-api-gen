@@ -152,6 +152,14 @@ commits base="main":
     committed {{ base }}..HEAD
     git cliff --config cliff.toml {{ base }}..HEAD -o /dev/null
 
+# Serve the documentation at localhost:3000, rebuilding on change.
+docs:
+    mdbook serve docs --open
+
+# Build the documentation into docs/book.
+docs-build:
+    mdbook build docs
+
 # Preview the CHANGELOG.md entry a release cut from HEAD would get.
 release-notes BUMP="auto":
     git cliff --config cliff.toml --unreleased --bump {{ BUMP }}

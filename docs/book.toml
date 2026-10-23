@@ -1,0 +1,11 @@
+[book]
+title = "go-api-gen"
+description = "A spec-first OpenAPI code generator for Go, built for microservices monorepos."
+authors = ["Franco Grobler"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/franco-grobler/go-api-gen"
+edit-url-template = "https://github.com/franco-grobler/go-api-gen/edit/main/docs/{path}"
+site-url = "/go-api-gen/"
