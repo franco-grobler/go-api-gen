@@ -45,6 +45,18 @@ type typeEmitter struct {
 	// declaration order. Validation walks it so a synthesized type gets a
 	// Validate method alongside the named ones.
 	declared []queued
+
+	// opTypes are the types the server declares for each operation. They
+	// share the package with the schemas, so they are named here, by the same
+	// deduper, rather than by the server emitter after the fact.
+	opTypes map[*spec.Operation]opTypes
+}
+
+// opTypes names the types the server declares for one operation. A parameter
+// struct's name is set even when the operation has no such parameters, but
+// only claimed when it does.
+type opTypes struct {
+	request, path, query, header string
 }
 
 type queued struct {
@@ -57,12 +69,13 @@ func (g *Generator) newTypeEmitter(
 	svc *workspace.Service, owned []*spec.Schema,
 ) *typeEmitter {
 	e := &typeEmitter{
-		ws:     g.ws,
-		mapper: g.mapper,
-		svc:    svc,
-		dedupe: naming.NewDeduper(),
-		synth:  map[*spec.Schema]string{},
-		done:   map[*spec.Schema]bool{},
+		ws:      g.ws,
+		mapper:  g.mapper,
+		svc:     svc,
+		dedupe:  naming.NewDeduper(),
+		synth:   map[*spec.Schema]string{},
+		done:    map[*spec.Schema]bool{},
+		opTypes: map[*spec.Operation]opTypes{},
 	}
 	// Reserve the names the workspace already assigned so a synthesized type
 	// can never collide with a declared one.

@@ -33,7 +33,7 @@ type serverEmitter struct {
 type operation struct {
 	op       *spec.Operation
 	name     string // exported Go name, from operationId
-	request  string // request struct name
+	opTypes         // request and parameter struct names
 	success  *spec.Response
 	respType string // Go type of the success body, empty when there is none
 	multi    bool   // more than one 2xx response
@@ -84,7 +84,7 @@ func (e *serverEmitter) operations() ([]*operation, error) {
 	for _, pi := range e.svc.Doc.Paths {
 		for _, op := range pi.Operations {
 			name := names.Take(naming.Exported(op.OperationID))
-			o := &operation{op: op, name: name, request: name + "Request"}
+			o := &operation{op: op, name: name, opTypes: e.types.opTypes[op]}
 
 			success := op.Success()
 			switch len(success) {
@@ -158,13 +158,13 @@ func (e *serverEmitter) requestTypes(ops []*operation) {
 		e.file.Comment(o.request + " is the decoded input to " + o.name + ".")
 		e.file.P("type %s struct {", o.request)
 		if len(path) > 0 {
-			e.file.P("\tPath %sPathParams", o.name)
+			e.file.P("\tPath %s", o.path)
 		}
 		if len(query) > 0 {
-			e.file.P("\tQuery %sQueryParams", o.name)
+			e.file.P("\tQuery %s", o.query)
 		}
 		if len(header) > 0 {
-			e.file.P("\tHeader %sHeaderParams", o.name)
+			e.file.P("\tHeader %s", o.header)
 		}
 		if body != nil && body.Schema != nil {
 			t, err := e.typeOf(body.Schema, o.name, "Body")
@@ -180,9 +180,9 @@ func (e *serverEmitter) requestTypes(ops []*operation) {
 		e.file.P("\tRaw *%s.Request", e.httpPkg)
 		e.file.P("}\n")
 
-		e.paramStruct(o.name+"PathParams", path)
-		e.paramStruct(o.name+"QueryParams", query)
-		e.paramStruct(o.name+"HeaderParams", header)
+		e.paramStruct(o.path, path)
+		e.paramStruct(o.query, query)
+		e.paramStruct(o.header, header)
 	}
 }
 

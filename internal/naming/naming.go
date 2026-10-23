@@ -187,6 +187,9 @@ func NewDeduper(reserved ...string) *Deduper {
 	return d
 }
 
+// Taken reports whether name has already been handed out or reserved.
+func (d *Deduper) Taken(name string) bool { return d.used[name] }
+
 // Take returns name, or name with a numeric suffix if it is already taken.
 func (d *Deduper) Take(name string) string {
 	if !d.used[name] {

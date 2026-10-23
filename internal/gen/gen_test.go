@@ -1213,3 +1213,117 @@ func TestPropertyCountThroughAllOf(t *testing.T) {
 `,
 	})
 }
+
+// A schema named for an operation's request, as OpenAI names its bodies, used
+// to be declared a second time by the server. The schema keeps its name,
+// since its author chose it and other packages may import it, and the
+// server's struct is the one that yields.
+func TestRequestStructYieldsToASchema(t *testing.T) {
+	out, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /things:
+    post:
+      operationId: createThing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateThingRequest' }
+      responses: { "204": { description: ok } }
+  /things/{id}:
+    get:
+      operationId: getThing
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GetThingPathParams' }
+    delete:
+      operationId: deleteThing
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteThingRequest' }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteThingInput' }
+components:
+  schemas:
+    CreateThingRequest:
+      type: object
+      properties:
+        name: { type: string }
+    GetThingPathParams:
+      type: object
+      properties:
+        id: { type: string }
+    DeleteThingRequest:
+      type: object
+      properties:
+        reason: { type: string }
+    DeleteThingInput:
+      type: object
+      properties:
+        ok: { type: boolean }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := normalize(out["gen/api/server.gen.go"])
+	for _, want := range []string{
+		"CreateThing(ctx context.Context, req CreateThingInput)",
+		"type CreateThingInput struct { Body CreateThingRequest ",
+		"type GetThingRequest struct { Path GetThingPathParams2",
+		"type GetThingPathParams2 struct { ID string }",
+		// Both words taken, so the last resort is a number.
+		"DeleteThing(ctx context.Context, req DeleteThingInput2)",
+	} {
+		if !strings.Contains(server, want) {
+			t.Errorf("want %q in\n%s", want, out["gen/api/server.gen.go"])
+		}
+	}
+	compiles(t, out)
+}
+
+// A schema cannot take a name the server declares for itself, because those
+// names are the server's API and have nowhere else to go.
+func TestSchemaNamedLikeTheServerIsRejected(t *testing.T) {
+	_, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /x:
+    get:
+      operationId: x
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Handler' }
+components:
+  schemas:
+    Handler:
+      type: object
+      properties:
+        name: { type: string }
+`))
+	if err == nil {
+		t.Fatal("generation succeeded, want a name collision error")
+	}
+	for _, want := range []string{`"Handler"`, "x-go-name"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v\nwant it to mention %s", err, want)
+		}
+	}
+}

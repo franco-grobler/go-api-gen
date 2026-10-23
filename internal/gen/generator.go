@@ -145,13 +145,49 @@ func (g *Generator) planOperations(
 		return err
 	}
 
+	if err := reserveServerNames(svc, types); err != nil {
+		return err
+	}
+
 	names := naming.NewDeduper()
 	for _, pi := range svc.Doc.Paths {
 		for _, op := range pi.Operations {
 			name := names.Take(naming.Exported(op.OperationID))
+
+			// The request and parameter structs are named before anything
+			// inline in the operation, and after every schema, so a schema
+			// keeps the name its author gave it and the struct is the one
+			// that yields. createAssistant's request would otherwise be
+			// declared a second time when the document also has a
+			// CreateAssistantRequest schema, as OpenAI's does.
+			group := map[string]string{}
+			for _, in := range []string{"path", "query", "header"} {
+				group[in] = name + naming.Exported(in) + "Params"
+				if len(op.Params(in)) > 0 {
+					group[in] = types.dedupe.Take(group[in])
+				}
+			}
+			// The request struct is in every handler's signature, so a clash
+			// falls back to another word before it falls back to a number.
+			request := name + "Request"
+			if types.dedupe.Taken(request) {
+				request = name + "Input"
+			}
+			types.opTypes[op] = opTypes{
+				request: types.dedupe.Take(request),
+				path:    group["path"],
+				query:   group["query"],
+				header:  group["header"],
+			}
+
 			for _, p := range op.Parameters {
-				group := naming.Exported(p.In) + "Params"
-				if err := visit(p.Schema, name+group,
+				owner, ok := group[p.In]
+				if !ok {
+					// A cookie parameter is not decoded, but an inline
+					// schema on it is still a type to name.
+					owner = name + naming.Exported(p.In) + "Params"
+				}
+				if err := visit(p.Schema, owner,
 					naming.Exported(p.Name)); err != nil {
 					return err
 				}
@@ -171,6 +207,51 @@ func (g *Generator) planOperations(
 		}
 	}
 	return nil
+}
+
+// reserveServerNames claims the package-level identifiers every generated
+// server declares, before any inline schema is named.
+//
+// Unlike a request struct, these are the server's API and cannot yield, so a
+// schema already holding one is an error the author resolves with x-go-name.
+func reserveServerNames(svc *workspace.Service, types *typeEmitter) error {
+	reserved := []string{
+		"Handler", "ServerOption", "WithMiddleware", "WithErrorOptions",
+		"NewServer", "Register", "DefaultErrorOptions",
+	}
+	if usesSecurity(svc.Doc) {
+		reserved = append(reserved, "Authenticator")
+	}
+	for _, id := range reserved {
+		if !types.dedupe.Taken(id) {
+			types.dedupe.Take(id)
+			continue
+		}
+		for _, s := range svc.Local {
+			if types.ws.GoName(s) == id {
+				return fmt.Errorf("%s: schema %q is named %s in Go, which "+
+					"the generated server declares.\n"+
+					"Set x-go-name on the schema to rename it.",
+					s.Loc, s.Loc.ComponentName(), id)
+			}
+		}
+	}
+	return nil
+}
+
+// usesSecurity reports whether any operation names a security scheme, which
+// is when the server declares an Authenticator.
+func usesSecurity(doc *spec.Document) bool {
+	for _, pi := range doc.Paths {
+		for _, op := range pi.Operations {
+			for _, req := range op.Security {
+				if len(req.Schemes) > 0 {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // emitSpec writes the self-contained, tree-shaken OpenAPI document.
