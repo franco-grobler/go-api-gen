@@ -115,6 +115,23 @@ tidy:
         (cd "$m" && GOWORK=off {{ go }} mod tidy)
     done
 
+# Download the latest OpenAI spec into testdata, a large real-world document
+# to try the generator against. It is fetched rather than vendored by hand so
+# a refresh is one command and the diff shows what OpenAI changed.
+update-openai-spec:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    url=https://raw.githubusercontent.com/openai/openai-openapi/manual_spec/openapi.yaml
+    mkdir -p testdata/openai
+    # Download beside the target and rename, so a failed fetch never leaves a
+    # truncated spec behind.
+    tmp=$(mktemp testdata/openai/openapi.yaml.XXXXXX)
+    trap 'rm -f "$tmp"' EXIT
+    curl -fsSL --retry 3 -o "$tmp" "$url"
+    chmod 644 "$tmp"   # mktemp creates it owner-only
+    mv "$tmp" testdata/openai/openapi.yaml
+    echo "wrote testdata/openai/openapi.yaml ($(wc -l < testdata/openai/openapi.yaml | tr -d ' ') lines)"
+
 # Remove the installed linter and the coverage profile.
 clean:
     rm -rf {{ gobin }} coverage.out
