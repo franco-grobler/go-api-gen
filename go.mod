@@ -1,6 +1,6 @@
 module github.com/franco-grobler/go-api-gen
 
-go 1.24
+go 1.27.1
 
 require (
 	github.com/go-viper/mapstructure/v2 v2.5.0

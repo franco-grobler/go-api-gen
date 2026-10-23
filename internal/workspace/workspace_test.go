@@ -34,7 +34,7 @@ func build(t *testing.T, files map[string]string) (*Workspace, string, error) {
 // A minimal set of files for a two-service monorepo sharing one schema root.
 func monorepo() map[string]string {
 	return map[string]string{
-		"go.mod": "module github.com/acme/monorepo\n\ngo 1.24\n",
+		"go.mod": "module github.com/acme/monorepo\n\ngo 1.27.1\n",
 		"go-api-gen.yaml": `
 version: 1
 shared:

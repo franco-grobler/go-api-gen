@@ -20,7 +20,7 @@ func generate(
 ) (map[string]string, error) {
 	t.Helper()
 	dir := t.TempDir()
-	files["go.mod"] = "module github.com/acme/monorepo\n\ngo 1.24\n"
+	files["go.mod"] = "module github.com/acme/monorepo\n\ngo 1.27.1\n"
 	for name, body := range files {
 		p := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -682,7 +682,7 @@ func goCommand(t *testing.T, out, extra map[string]string, args ...string) {
 	}
 	dir := t.TempDir()
 	files := map[string]string{
-		"go.mod": "module github.com/acme/monorepo\n\ngo 1.24\n\n" +
+		"go.mod": "module github.com/acme/monorepo\n\ngo 1.27.1\n\n" +
 			"require github.com/franco-grobler/go-api-gen/runtime v0.0.0\n\n" +
 			"replace github.com/franco-grobler/go-api-gen/runtime => " +
 			runtimeDir + "\n",

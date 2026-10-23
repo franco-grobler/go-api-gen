@@ -1,6 +1,6 @@
 module github.com/example/microservices/identity
 
-go 1.24
+go 1.27.1
 
 require (
 	github.com/example/microservices/schema v0.0.0

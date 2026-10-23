@@ -1,4 +1,4 @@
-go 1.24
+go 1.27.1
 
 // The examples are part of the workspace so CI compiles the generated
 // code, which is the only check that proves the emitters produce valid Go.

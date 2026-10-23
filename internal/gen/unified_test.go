@@ -21,7 +21,7 @@ func unify(
 ) (text string, doc map[string]any, err error) {
 	t.Helper()
 	dir := t.TempDir()
-	files["go.mod"] = "module github.com/acme/monorepo\n\ngo 1.24\n"
+	files["go.mod"] = "module github.com/acme/monorepo\n\ngo 1.27.1\n"
 	for name, body := range files {
 		p := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

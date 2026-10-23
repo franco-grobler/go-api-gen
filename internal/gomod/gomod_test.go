@@ -22,7 +22,7 @@ func TestSingleModule(t *testing.T) {
 	write(
 		t,
 		filepath.Join(root, "go.mod"),
-		"module github.com/acme/monorepo\n\ngo 1.24\n",
+		"module github.com/acme/monorepo\n\ngo 1.27.1\n",
 	)
 
 	r := NewResolver()
@@ -50,7 +50,7 @@ func TestMultiModule(t *testing.T) {
 	write(
 		t,
 		filepath.Join(root, "go.work"),
-		"go 1.24\n\nuse (\n\t./shared\n\t./services/billing\n)\n",
+		"go 1.27.1\n\nuse (\n\t./shared\n\t./services/billing\n)\n",
 	)
 	write(
 		t,
@@ -107,7 +107,7 @@ func TestModulePath(t *testing.T) {
 		"module example.com/m\n":            "example.com/m",
 		"module \"example.com/m\"\n":        "example.com/m",
 		"// c\nmodule example.com/m // x\n": "example.com/m",
-		"go 1.24\nmodule example.com/m\n":   "example.com/m",
+		"go 1.27.1\nmodule example.com/m\n": "example.com/m",
 		"\tmodule   example.com/m  \n":      "example.com/m",
 	}
 	for in, want := range tests {
@@ -124,7 +124,7 @@ func TestModulePath(t *testing.T) {
 	if _, err := modulePath([]byte("modules example.com/m\n")); err == nil {
 		t.Error("expected an error, got a match on a prefix")
 	}
-	_, err := modulePath([]byte("go 1.24\n"))
+	_, err := modulePath([]byte("go 1.27.1\n"))
 	if err == nil || !strings.Contains(err.Error(), "no module directive") {
 		t.Errorf("err = %v, want a no-module-directive error", err)
 	}

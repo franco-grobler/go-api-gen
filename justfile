@@ -57,11 +57,17 @@ lint-bin:
     #!/usr/bin/env bash
     set -euo pipefail
     want={{ trim_start_match(lint_version, 'v') }}
+    # The linter refuses code that targets a newer Go than it was built with,
+    # so it is built with the toolchain go.mod selects, and rebuilt when that
+    # changes. `go install pkg@version` would otherwise pick a toolchain from
+    # the linter's own go.mod.
+    toolchain=$({{ go }} env GOVERSION)
     if [ -x "{{ lint }}" ] &&
-        "{{ lint }}" version 2>/dev/null | grep -qF "$want"; then
+        "{{ lint }}" version 2>/dev/null |
+        grep -F "$want" | grep -qF "built with $toolchain "; then
         exit 0
     fi
-    GOBIN="{{ gobin }}" {{ go }} install \
+    GOTOOLCHAIN="$toolchain" GOBIN="{{ gobin }}" {{ go }} install \
         github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{ lint_version }}
 
 # Lint the generator and the runtime module.

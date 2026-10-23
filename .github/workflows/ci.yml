@@ -73,15 +73,20 @@ jobs:
             go.sum
             runtime/go.sum
 
+      # Built from source with the Go that go.mod selects: a release binary
+      # is built with whatever Go was current when it was cut, and the linter
+      # refuses code that targets a newer one.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
           version: ${{ env.GOLANGCI_VERSION }}
+          install-mode: goinstall
 
       - name: golangci-lint (runtime module)
         uses: golangci/golangci-lint-action@v8
         with:
           version: ${{ env.GOLANGCI_VERSION }}
+          install-mode: goinstall
           working-directory: runtime
           args: --config=${{ github.workspace }}/.golangci.yml
 
