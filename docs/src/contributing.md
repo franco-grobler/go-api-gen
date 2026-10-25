@@ -81,8 +81,11 @@ which do not. A `!` after the type, or a `BREAKING CHANGE:` footer, marks a
 breaking change. The two configuration files list the types separately; keep
 them in step.
 
-A pull request is squash-merged, so its title becomes the commit, and CI holds
-it to the same rules.
+A pull request is merged with a merge commit or rebased, never squashed, so
+each of its commits reaches `main` and the changelog. A merge commit is titled
+`<pull request title> (#<number>)`, so CI holds the title, with that suffix, to
+the same rules; the changelog leaves merge commits out, since the commits they
+merge are listed already.
 
 ## Layout
 
