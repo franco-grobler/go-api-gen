@@ -1,0 +1,156 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - durationcheck
+    - errorlint
+    - makezero
+    - nilerr
+    - noctx
+    - rowserrcheck
+    - wastedassign
+
+    # Style and clarity
+    - copyloopvar
+    - errname
+    - gocritic
+    - goconst
+    - misspell
+    - nakedret
+    - nolintlint
+    - predeclared
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - whitespace
+
+    # Line length
+    - lll
+
+    # Security
+    - gosec
+
+    # Tests
+    - thelper
+    - tparallel
+
+  settings:
+    lll:
+      # Generated code is excluded below; this applies to hand-written source.
+      line-length: 80
+      tab-width: 4
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    govet:
+      enable-all: true
+      disable:
+        # Field alignment optimises for memory layout at the cost of grouping
+        # related fields together, which matters more in a model this size.
+        - fieldalignment
+        # Shadowing err inside a closure is idiomatic Go and the overwhelming
+        # majority of reports here are that pattern. The Go team does not
+        # recommend this analyser as an error for the same reason.
+        - shadow
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        # Both fight the early-return style used throughout.
+        - ifElseChain
+        - singleCaseSwitch
+
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: indent-error-flow
+        - name: var-declaration
+        - name: range
+        - name: errorf
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: receiver-naming
+        - name: increment-decrement
+        - name: unexported-return
+        - name: time-naming
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    staticcheck:
+      checks:
+        - all
+        # Error strings must not end in punctuation. Several diagnostics here
+        # are deliberately multi-sentence: they state the problem and then how
+        # to fix it, which is worth more to the author than the convention.
+        - -ST1005
+
+    gosec:
+      excludes:
+        # Generated source and specs are world-readable by design; they are
+        # committed to the repository.
+        - G306
+        # Reading files named by the user is what a code generator does. Every
+        # path here comes from the workspace config or a $ref within it.
+        - G304
+      config:
+        G301: "0755"
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+
+    goconst:
+      min-len: 3
+      min-occurrences: 4
+      ignore-tests: true
+
+  exclusions:
+    generated: strict
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      # A test helper returning a value only some callers use is normal, and
+      # fixtures repeat short literals by nature. The line limit still applies.
+      - path: _test\.go
+        linters:
+          - unparam
+          - goconst
+          - gosec
+          - dupl
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/franco-grobler/go-api-gen
+  exclusions:
+    generated: strict

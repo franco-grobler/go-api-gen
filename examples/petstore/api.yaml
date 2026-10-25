@@ -1,0 +1,146 @@
+# The Swagger Petstore, the canonical OpenAPI example, with one deliberate
+# change: the default response describes the RFC 9457 problem this server
+# actually sends, rather than the ad-hoc Error object the original document
+# declares. Everything else -- the paths, the operations, Pet and Pets -- is
+# the document as published.
+openapi: 3.1.0
+info:
+  title: Swagger Petstore
+  version: "1.0.0"
+  description: A pet store, as the OpenAPI Initiative has been publishing it.
+  license:
+    name: MIT
+servers:
+  - url: https://petstore.example.com/v1
+    description: Production
+paths:
+  /pets:
+    get:
+      summary: List all pets
+      operationId: listPets
+      tags: [pets]
+      parameters:
+        - name: limit
+          in: query
+          description: How many pets to return at once, at most 100.
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: A paged array of pets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pets"
+        default:
+          description: Unexpected error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+    post:
+      summary: Create a pet
+      operationId: createPets
+      tags: [pets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewPet"
+      responses:
+        "201":
+          description: The created pet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        default:
+          description: Unexpected error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /pets/{petId}:
+    get:
+      summary: Info for a specific pet
+      operationId: showPetById
+      tags: [pets]
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          description: The id of the pet to retrieve.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: The pet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        default:
+          description: Unexpected error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        tag:
+          type: string
+          maxLength: 64
+
+    NewPet:
+      description: A pet as a client submits it; the store assigns the id.
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        tag:
+          type: string
+          maxLength: 64
+
+    Pets:
+      type: array
+      maxItems: 100
+      items:
+        $ref: "#/components/schemas/Pet"
+
+    Problem:
+      description: An RFC 9457 problem document.
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          description: A URI identifying the kind of failure.
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string

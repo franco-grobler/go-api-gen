@@ -1,0 +1,82 @@
+# git-cliff: https://git-cliff.org/docs/configuration
+#
+# Writes CHANGELOG.md and the GitHub release notes from the commit history,
+# and refuses a history that is not conventional commits: the Prepare release
+# workflow and the CI commit check both run it.
+
+[changelog]
+header = """
+# Changelog
+
+Every release of the generator and the runtime module, which share a version.
+This file is written by git-cliff from the commit history; edit cliff.toml,
+not the entries.\n
+"""
+# One release. The compare link is against the previous release, or the
+# release page for the first.
+body = """
+{%- set repo = "https://github.com/franco-grobler/go-api-gen" -%}
+{% if version -%}
+    {% if previous.version -%}
+        ## [{{ version | trim_start_matches(pat="v") }}]({{ repo }}/compare/{{ previous.version }}...{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+    {% else -%}
+        ## [{{ version | trim_start_matches(pat="v") }}]({{ repo }}/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+    {% endif -%}
+{% else -%}
+    ## Unreleased
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | striptags | trim }}
+    {% for commit in commits %}
+        - {% if commit.scope %}**{{ commit.scope }}** {% endif %}\
+            {{ commit.message | split(pat="\n") | first | trim }} \
+            ([{{ commit.id | truncate(length=7, end="") }}]({{ repo }}/commit/{{ commit.id }}))\
+    {%- endfor %}
+{% endfor %}\n
+"""
+trim = true
+
+[git]
+conventional_commits = true
+# A commit that is not conventional fails the run instead of being dropped,
+# which is what makes this the check as well as the changelog.
+require_conventional = true
+# Each runtime/vX.Y.Z tag shares a commit with vX.Y.Z, so only the
+# generator's tags mark releases.
+tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+"
+# A breaking change is listed even when its type is one the parsers skip.
+protect_breaking_commits = true
+# The history before conventional commits were enforced.
+commit_preprocessors = [
+  { pattern = "^Initial commit$", replace = "chore: initial commit" },
+  # GitHub writes these; the commits they merge are the ones checked.
+  { pattern = "^Merge (pull request|branch|remote-tracking branch) ", replace = "chore: merge " },
+]
+# The groups a reader of the changelog acts on, in this order. The HTML
+# comments only sort them. Work that changes nothing for a user of the
+# generator or the runtime is left out.
+commit_parsers = [
+  # Matched on the text, not the parsed breaking field: a field parser errors
+  # on a commit that does not parse, and git-cliff skips that commit instead
+  # of failing require_conventional on it.
+  { message = "^[a-z]+(\\([^)]*\\))?!:", group = "<!-- 0 -->Breaking changes" },
+  { footer = "^BREAKING[ -]CHANGE", group = "<!-- 0 -->Breaking changes" },
+  { message = "^feat", group = "<!-- 1 -->Features" },
+  { message = "^fix", group = "<!-- 2 -->Fixes" },
+  { message = "^perf", group = "<!-- 3 -->Performance" },
+  { message = "^revert", group = "<!-- 4 -->Reverted" },
+  { message = "^(build|chore|ci|docs|refactor|style|test)", skip = true },
+]
+filter_commits = false
+# git-cliff checks only the shape of a conventional commit, so `oops: x`
+# passes it. Failing on a commit no parser matches makes the list above the
+# set of types this repository allows.
+fail_on_unmatched_commit = true
+sort_commits = "newest"
+
+[bump]
+# While the major version is 0, a feature is a minor release and a breaking
+# change is too; 1.0.0 is a deliberate choice, made with an explicit version.
+features_always_bump_minor = true
+breaking_always_bump_major = false
+initial_tag = "v0.1.0"

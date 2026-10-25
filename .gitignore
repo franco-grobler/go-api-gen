@@ -1,0 +1,8 @@
+/dist/
+# Binary produced by 'go build ./...' at the repo root.
+/go-api-gen
+*.test
+.DS_Store
+/.bin/
+coverage.out
+/docs/book/

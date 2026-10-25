@@ -1,0 +1,14 @@
+components:
+  schemas:
+    Money:
+      description: An amount in the minor unit of its currency.
+      type: object
+      required: [amount_minor, currency]
+      properties:
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3

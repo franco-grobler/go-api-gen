@@ -1,0 +1,66 @@
+openapi: 3.1.0
+info:
+  title: Billing
+  version: "1.0.0"
+paths:
+  /invoices:
+    parameters:
+      - $ref: ../../schema/common.yaml#/components/parameters/Cursor
+      - $ref: ../../schema/common.yaml#/components/parameters/Limit
+    get:
+      operationId: listInvoices
+      summary: List invoices
+      responses:
+        "200":
+          description: A page of invoices.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, page]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Invoice' }
+                  page: { $ref: ../../schema/common.yaml#/components/schemas/PageInfo }
+    post:
+      operationId: createInvoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInvoice' }
+      responses:
+        "201":
+          description: The created invoice.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+components:
+  schemas:
+    Invoice:
+      type: object
+      required: [id, payer, total, status]
+      properties:
+        id: { type: string, format: uuid }
+        payer: { $ref: ../../schema/user.yaml#/components/schemas/User }
+        total: { $ref: ../../schema/common.yaml#/components/schemas/Money }
+        status:
+          type: string
+          enum: [draft, open, paid, void]
+        lines:
+          type: array
+          items:
+            type: object
+            required: [description, amount]
+            properties:
+              description: { type: string, minLength: 1 }
+              amount: { $ref: ../../schema/common.yaml#/components/schemas/Money }
+
+    CreateInvoice:
+      type: object
+      required: [payer_id, total]
+      properties:
+        payer_id: { type: string, format: uuid }
+        total: { $ref: ../../schema/common.yaml#/components/schemas/Money }
+        note: { type: string, maxLength: 500 }

@@ -1,0 +1,37 @@
+version: 1
+
+# One shared schema root: everything under it generates into a single Go
+# package that every service imports rather than regenerates.
+shared:
+  apitypes:
+    from: schema
+    to: gen/apitypes
+
+services:
+  billing:
+    spec: services/billing/api.yaml
+    to: services/billing/internal/api
+  identity:
+    spec: services/identity/api.yaml
+    to: services/identity/internal/api
+
+generate: [types, validate, server, spec]
+
+types:
+  format:uuid:
+    go: uuid.UUID
+    import: github.com/google/uuid
+
+errors:
+  type_base_url: https://errors.acme.io/
+  validation_title: Invalid request
+
+# The platform-wide document, stitched from every service above.
+unified:
+  to: gen/openapi.yaml
+  title: Acme Platform API
+  version: "2026.1"
+  description: Every public endpoint across the Acme services.
+  servers:
+    - url: https://api.acme.io
+      description: Production
