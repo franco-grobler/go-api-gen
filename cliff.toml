@@ -13,7 +13,8 @@ This file is written by git-cliff from the commit history; edit cliff.toml,
 not the entries.\n
 """
 # One release. The compare link is against the previous release, or the
-# release page for the first.
+# release page for the first. A merge commit is left out: it is titled after
+# its pull request, and the commits it merges are listed already.
 body = """
 {%- set repo = "https://github.com/franco-grobler/go-api-gen" -%}
 {% if version -%}
@@ -25,7 +26,9 @@ body = """
 {% else -%}
     ## Unreleased
 {% endif -%}
-{% for group, commits in commits | group_by(attribute="group") %}
+{% for group, commits in commits
+    | filter(attribute="merge_commit", value=false)
+    | group_by(attribute="group") %}
     ### {{ group | striptags | trim }}
     {% for commit in commits %}
         - {% if commit.scope %}**{{ commit.scope }}** {% endif %}\
@@ -49,7 +52,8 @@ protect_breaking_commits = true
 # The history before conventional commits were enforced.
 commit_preprocessors = [
   { pattern = "^Initial commit$", replace = "chore: initial commit" },
-  # GitHub writes these; the commits they merge are the ones checked.
+  # GitHub's own merge titles, from before merges took the pull request's
+  # title; the commits they merge are the ones checked.
   { pattern = "^Merge (pull request|branch|remote-tracking branch) ", replace = "chore: merge " },
 ]
 # The groups a reader of the changelog acts on, in this order. The HTML
