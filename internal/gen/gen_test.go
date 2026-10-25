@@ -1621,3 +1621,57 @@ components:
 	}
 	compiles(t, out)
 }
+
+// A bound no value of the Go type can cross is dropped, not emitted: it may
+// not be a constant of that type, and OpenAI writes int64's range as
+// ±9223372036854776000, which is ±1<<63 once parsed.
+func TestUnreachableIntegerBoundIsDropped(t *testing.T) {
+	out, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /x:
+    post:
+      operationId: x
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Seeded' }
+      responses: { "204": { description: ok } }
+components:
+  schemas:
+    Seeded:
+      type: object
+      properties:
+        seed:
+          type: integer
+          minimum: -9223372036854776000
+          maximum: 9223372036854776000
+        small:
+          type: integer
+          format: int32
+          minimum: -5000000000
+          exclusiveMaximum: 2147483648
+        kept:
+          type: integer
+          format: int32
+          exclusiveMinimum: -2147483648
+          maximum: 2147483646
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := normalize(out["gen/api/validate.gen.go"])
+	for _, bad := range []string{"9223372036854775", "e+18", "5000000000",
+		">= 2147483648"} {
+		if strings.Contains(v, bad) {
+			t.Errorf("unreachable bound %q emitted:\n%s", bad, v)
+		}
+	}
+	for _, want := range []string{"<= -2147483648", "> 2147483646"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("reachable bound %q missing:\n%s", want, v)
+		}
+	}
+	compiles(t, out)
+}

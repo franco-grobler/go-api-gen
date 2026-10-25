@@ -2,6 +2,7 @@ package gen
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -319,8 +320,7 @@ func needsCheck(m *gomap.Mapper, s *spec.Schema) bool {
 		return true
 	}
 	return s.MinLength != nil || s.MaxLength != nil || s.Pattern != "" ||
-		s.Minimum != nil || s.Maximum != nil ||
-		s.ExclusiveMinimum != nil || s.ExclusiveMaximum != nil ||
+		hasBound(m, s) ||
 		s.MultipleOf != nil || s.MinItems != nil || s.MaxItems != nil ||
 		s.MinProperties != nil || s.MaxProperties != nil ||
 		len(s.Enum) > 0
@@ -418,7 +418,7 @@ func (e *validateEmitter) scalarChecks(b *strings.Builder, s *spec.Schema,
 		{s.ExclusiveMaximum, ">=", "less_than", "Input should be < %s", "lt"},
 	}
 	for _, n := range numeric {
-		if n.bound == nil {
+		if n.bound == nil || unreachable(e.mapper, s, n.op, *n.bound) {
 			continue
 		}
 		lit := formatNumber(*n.bound)
@@ -490,10 +490,67 @@ func plural(n uint64) string {
 	return "s"
 }
 
+// intRange is the range of each Go integer type, with the top exclusive:
+// 1<<63 is a float64, and math.MaxInt64 is not.
+var intRange = map[string]struct{ lo, top float64 }{
+	"int":    {math.MinInt64, 1 << 63},
+	"int64":  {math.MinInt64, 1 << 63},
+	"int32":  {math.MinInt32, 1 << 31},
+	"int16":  {math.MinInt16, 1 << 15},
+	"int8":   {math.MinInt8, 1 << 7},
+	"uint":   {0, 1 << 64},
+	"uint64": {0, 1 << 64},
+	"uint32": {0, 1 << 32},
+	"uint16": {0, 1 << 16},
+	"uint8":  {0, 1 << 8},
+}
+
+// unreachable reports whether no value of an integer schema's Go type can
+// fail the comparison `value op bound`. Such a bound is skipped rather than
+// emitted, since it may not be a constant of that type at all: OpenAI writes
+// int64's range as ±9223372036854776000, and the maximum is 1<<63.
+func unreachable(m *gomap.Mapper, s *spec.Schema, op string,
+	bound float64,
+) bool {
+	t, ok := m.Scalar(s)
+	if !ok {
+		return false
+	}
+	r, ok := intRange[t.Expr]
+	if !ok {
+		return false
+	}
+	switch op {
+	case "<":
+		return bound <= r.lo
+	case "<=":
+		return bound < r.lo
+	case ">":
+		return bound >= r.top-1
+	default: // ">="
+		return bound >= r.top
+	}
+}
+
+// hasBound reports whether a schema has a numeric bound its value can cross.
+func hasBound(m *gomap.Mapper, s *spec.Schema) bool {
+	for op, b := range map[string]*float64{
+		"<": s.Minimum, ">": s.Maximum,
+		"<=": s.ExclusiveMinimum, ">=": s.ExclusiveMaximum,
+	} {
+		if b != nil && !unreachable(m, s, op, *b) {
+			return true
+		}
+	}
+	return false
+}
+
 // formatNumber renders a bound without a trailing .0 on whole values, so the
-// generated comparison reads the way the spec was written.
+// generated comparison reads the way the spec was written. The range check
+// comes first because converting a float outside int64's range is not
+// portable: amd64 wraps it and arm64 saturates.
 func formatNumber(f float64) string {
-	if f == float64(int64(f)) {
+	if f >= math.MinInt64 && f < 1<<63 && f == math.Trunc(f) {
 		return strconv.FormatInt(int64(f), 10)
 	}
 	return strconv.FormatFloat(f, 'g', -1, 64)
