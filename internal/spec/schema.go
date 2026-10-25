@@ -147,17 +147,32 @@ func (s *Schema) IsEnum() bool {
 	return s != nil && len(s.Enum) > 0
 }
 
-// Wrapped returns the one schema s wraps, when s is an inline allOf of a
-// single member that adds nothing but annotations: a title, description,
-// default, example, nullability or deprecation. Otherwise it returns nil.
+// Wrapped returns the one schema s wraps, when s is an inline allOf, oneOf or
+// anyOf of a single member that adds nothing but annotations: a title,
+// description, default, example, nullability or deprecation. Otherwise it
+// returns nil.
 //
 // It is the OpenAPI 3.0 idiom for describing a $ref, whose siblings that
-// version ignores, and such a schema means its member. A named component is
-// never a wrapper: it was given a name to be a type of its own.
+// version ignores, and such a schema means its member. A union of one is the
+// same thing, and what anyOf [X, {type: 'null'}] becomes once its null member
+// has made it nullable. A named component is never a wrapper: it was given a
+// name to be a type of its own.
 func (s *Schema) Wrapped() *Schema {
-	if s == nil || s.Named() || len(s.AllOf) != 1 {
+	if s == nil || s.Named() {
 		return nil
 	}
+	var only *Schema
+	switch n := [3]int{len(s.AllOf), len(s.OneOf), len(s.AnyOf)}; n {
+	case [3]int{1, 0, 0}:
+		only = s.AllOf[0]
+	case [3]int{0, 1, 0}:
+		only = s.OneOf[0]
+	case [3]int{0, 0, 1}:
+		only = s.AnyOf[0]
+	default:
+		return nil
+	}
+	// A discriminator over one member has nothing to choose between.
 	adds := len(s.Type) > 0 || s.Format != "" || len(s.Enum) > 0 ||
 		s.HasConst || len(s.Properties) > 0 || len(s.Required) > 0 ||
 		s.AdditionalPro != nil || s.NoAdditional ||
@@ -166,13 +181,12 @@ func (s *Schema) Wrapped() *Schema {
 		s.UniqueItems || s.MinLength != nil || s.MaxLength != nil ||
 		s.Pattern != "" || s.Minimum != nil || s.Maximum != nil ||
 		s.ExclusiveMinimum != nil || s.ExclusiveMaximum != nil ||
-		s.MultipleOf != nil || len(s.OneOf) > 0 || len(s.AnyOf) > 0 ||
-		s.Not != nil || s.Discriminator != nil || s.GoType != "" ||
+		s.MultipleOf != nil || s.Not != nil || s.GoType != "" ||
 		s.GoName != "" || len(s.Validate) > 0
 	if adds {
 		return nil
 	}
-	return s.AllOf[0]
+	return only
 }
 
 // Empty reports whether the schema constrains nothing at all, which maps to

@@ -188,6 +188,8 @@ func (e *validateEmitter) schemaBody(s *spec.Schema, expr, v string) string {
 	}
 
 	switch {
+	case classify(s) == kindUnion:
+		e.unionBody(&b, s, expr, v)
 	case len(s.Properties) > 0 || len(s.AllOf) > 0:
 		// Fields the client never sent are reported before anything else, so
 		// the response leads with what is missing rather than what is empty.
@@ -286,9 +288,9 @@ func (e *validateEmitter) value(b *strings.Builder, s *spec.Schema,
 				fmt.Sprintf("%s.Index(i)", loc), indent+"\t")
 			fmt.Fprintf(b, "%s}\n", indent)
 		}
-	case len(s.Properties) > 0:
-		// An inline object was synthesized into its own type, which validates
-		// itself the same way a named one does.
+	case len(s.Properties) > 0 || classify(s) == kindUnion:
+		// An inline object or union was synthesized into its own type, which
+		// validates itself the same way a named one does.
 		fmt.Fprintf(b, "%s%s.Validate(%s)\n", indent, expr, loc)
 	default:
 		e.scalarChecks(b, s, expr, loc, indent)
@@ -313,7 +315,9 @@ func needsCheck(m *gomap.Mapper, s *spec.Schema) bool {
 	// x-validate on an unnamed schema is not counted: its owner calls the
 	// rule as a method (see collectRules), so the value itself has nothing
 	// to check, and an Optional unwrapped for nothing does not compile.
-	if len(s.Properties) > 0 {
+	// A union always has something to report: a value that is none of its
+	// variants.
+	if len(s.Properties) > 0 || classify(s) == kindUnion {
 		return true
 	}
 	if s.Is("array") && needsCheck(m, s.Items) {
@@ -321,9 +325,10 @@ func needsCheck(m *gomap.Mapper, s *spec.Schema) bool {
 	}
 	return s.MinLength != nil || s.MaxLength != nil || s.Pattern != "" ||
 		hasBound(m, s) ||
-		s.MultipleOf != nil || s.MinItems != nil || s.MaxItems != nil ||
-		s.MinProperties != nil || s.MaxProperties != nil ||
-		len(s.Enum) > 0
+		s.MultipleOf != nil || len(s.Enum) > 0 ||
+		classify(s) == kindArray && (s.MinItems != nil || s.MaxItems != nil) ||
+		classify(s) == kindMap &&
+			(s.MinProperties != nil || s.MaxProperties != nil)
 }
 
 // propertyCount renders the minProperties and maxProperties checks against
@@ -427,7 +432,11 @@ func (e *validateEmitter) scalarChecks(b *strings.Builder, s *spec.Schema,
 				strconv.Quote(n.key), lit))
 	}
 
-	if s.MinItems != nil {
+	// Each keyword applies to its own type only: minItems on a number, which
+	// OpenAI's document has, constrains nothing, and len of a number does not
+	// compile.
+	isArray := classify(s) == kindArray
+	if isArray && s.MinItems != nil {
 		n := *s.MinItems
 		cond(fmt.Sprintf("len(%s) < %d", expr, n),
 			fail("too_short",
@@ -435,7 +444,7 @@ func (e *validateEmitter) scalarChecks(b *strings.Builder, s *spec.Schema,
 					n, plural(n)),
 				"\"min_length\"", strconv.FormatUint(n, 10)))
 	}
-	if s.MaxItems != nil {
+	if isArray && s.MaxItems != nil {
 		n := *s.MaxItems
 		cond(fmt.Sprintf("len(%s) > %d", expr, n),
 			fail("too_long",
@@ -445,7 +454,8 @@ func (e *validateEmitter) scalarChecks(b *strings.Builder, s *spec.Schema,
 
 	// A map holds exactly the keys it was decoded from. A struct cannot be
 	// measured this way, so it counts them as it decodes (see schemaBody).
-	if s.MinProperties != nil || s.MaxProperties != nil {
+	if classify(s) == kindMap &&
+		(s.MinProperties != nil || s.MaxProperties != nil) {
 		e.propertyCount(b, s.MinProperties, s.MaxProperties,
 			"len("+expr+")", loc, indent)
 	}
