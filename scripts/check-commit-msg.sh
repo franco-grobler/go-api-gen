@@ -21,7 +21,11 @@ else
 fi
 
 # git-cliff reads commits, not messages, so the message becomes one: a
-# commit object no ref points at, which git collects as garbage later.
+# commit object no ref points at, which git collects as garbage later. Who
+# wrote it does not matter, but git refuses to make one without a name, and
+# a CI runner has none configured.
+export GIT_AUTHOR_NAME=check-commit-msg GIT_AUTHOR_EMAIL=check@invalid
+export GIT_COMMITTER_NAME=check-commit-msg GIT_COMMITTER_EMAIL=check@invalid
 tree=$(git hash-object -t tree /dev/null)
 if parent=$(git rev-parse --quiet --verify HEAD); then
     commit=$(git commit-tree "$tree" -p "$parent" -m "$msg")
