@@ -70,7 +70,7 @@ jobs:
     needs: ci
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The commit CI just passed, with every tag, so the previous
           # release can be found.
