@@ -600,7 +600,9 @@ func (e *typeEmitter) structField(
 
 	// A field is a plain Go type only when it is always present and can
 	// never be null. Everything else is Optional, so a handler can tell
-	// "absent" from "explicitly cleared".
+	// "absent" from "explicitly cleared". Only an optional field may be
+	// omitted: a required nullable one left unset must still be sent, and
+	// Optional marshals it as null.
 	tag := strconv.Quote(p.Name)
 	if !p.Required || p.Schema.Nullable {
 		expr = fmt.Sprintf(
@@ -608,7 +610,9 @@ func (e *typeEmitter) structField(
 			f.Import(OptionalImport),
 			expr,
 		)
-		tag = strconv.Quote(p.Name + ",omitzero")
+		if !p.Required {
+			tag = strconv.Quote(p.Name + ",omitzero")
+		}
 	}
 
 	if desc := p.Schema.Description; desc != "" && !p.Schema.Named() {

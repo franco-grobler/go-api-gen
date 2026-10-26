@@ -115,7 +115,7 @@ func TestOptionalWrappingRules(t *testing.T) {
 	tests := []struct{ field, want string }{
 		{"Req", "Req string `json:\"req\"`"},
 		{"ReqNullable", "ReqNullable optional.Optional[string] " +
-			"`json:\"reqNullable,omitzero\"`"},
+			"`json:\"reqNullable\"`"},
 		{"Opt", "Opt optional.Optional[string] `json:\"opt,omitzero\"`"},
 		{"OptNullable", "OptNullable optional.Optional[string] " +
 			"`json:\"optNullable,omitzero\"`"},
@@ -125,6 +125,41 @@ func TestOptionalWrappingRules(t *testing.T) {
 			t.Errorf("field %s: want %q in\n%s", tt.field, tt.want, src)
 		}
 	}
+}
+
+// A required nullable property must always be sent, so one a handler left
+// unset encodes as null rather than being omitted, while an unset optional
+// property is still left out.
+func TestUnsetRequiredNullableEncodesAsNull(t *testing.T) {
+	out, err := generate(t, oneService(pathsFor(`    S:
+      type: object
+      required: [name]
+      properties:
+        name: { type: [string, "null"] }
+        note: { type: [string, "null"] }
+`, "S")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	passes(t, out, map[string]string{
+		"gen/api/encode_test.go": `package api
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestUnsetRequiredNullable(t *testing.T) {
+	b, err := json.Marshal(S{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(b), "{\"name\":null}"; got != want {
+		t.Errorf("Marshal(S{}) = %s, want %s", got, want)
+	}
+}
+`,
+	})
 }
 
 func TestAllOfEmbedsNamedMembers(t *testing.T) {
