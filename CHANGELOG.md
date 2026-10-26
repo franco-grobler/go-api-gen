@@ -4,6 +4,12 @@ Every release of the generator and the runtime module, which share a version.
 This file is written by git-cliff from the commit history; edit cliff.toml,
 not the entries.
 
+## [0.2.1](https://github.com/franco-grobler/go-api-gen/compare/v0.2.0...v0.2.1) - 2026-10-26
+
+### Fixes
+
+- **gen** encode unset required nullable properties as null ([d03c635](https://github.com/franco-grobler/go-api-gen/commit/d03c6358009b36bbf2568e709fd8699901e0dd7a))
+
 ## [0.2.0](https://github.com/franco-grobler/go-api-gen/compare/v0.1.0...v0.2.0) - 2026-10-26
 
 ### Features
