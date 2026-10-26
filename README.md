@@ -68,8 +68,9 @@ $ go-api-gen build     # generate every configured output
 $ go-api-gen check     # fail if committed output is out of date, for CI
 ```
 
-[`examples/`](examples) holds three runnable services, from one spec with no
-shared schema to three separately built modules sharing one.
+[`examples/`](examples) holds four runnable services, from one spec with no
+shared schema to three separately built modules sharing one, and one built on
+`oneOf` unions.
 
 ## Documentation
 

@@ -1,6 +1,6 @@
 # Examples
 
-All three examples are runnable programs, not snippets. Each has a binary
+All four examples are runnable programs, not snippets. Each has a binary
 under `cmd/`, a map behind a mutex standing in for the database, request
 logging through `WithMiddleware`, and a shutdown that drains in-flight
 requests.
@@ -63,3 +63,43 @@ module, with no conversion type in between.
 under `cmd/`, and `internal/platform` holding the listener and shutdown that
 both share — which is the plainest thing a monorepo buys, and the reason the
 microservices example carries a copy per module instead.
+
+`examples/unions` is the smallest of all: one operation, whose request is
+built on two [unions](unions.md). `channel` is an email, an SMS, or a
+webhook, named by its `type`. `send_at` is a moment or a delay, told apart by
+whether the JSON is a string or a number:
+
+```go
+type Channel struct {
+	Email   *Email
+	Sms     *Sms
+	Webhook *Webhook
+}
+
+type SendAt struct {
+	At    *time.Time
+	Delay *int
+}
+```
+
+The handler switches on whichever member is set, and is only reached once
+the union has been decoded into exactly one member and that member
+validated:
+
+```console
+$ cd examples/unions && go run ./cmd/notifyd
+$ curl -s -X POST localhost:8080/notifications \
+    -H 'content-type: application/json' \
+    -d '{"channel": {"type": "sms", "number": "+447700900123"},
+         "message": "Your table is ready", "send_at": 300}'
+{"id":"ntf_1","channel":{"type":"sms","number":"+447700900123"},
+ "send_at":"2026-10-26T09:05:00Z"}
+$ curl -s -X POST localhost:8080/notifications \
+    -H 'content-type: application/json' \
+    -d '{"channel": {"type": "pigeon"}, "message": "hi"}'
+{"type":"validation_failed","title":"Request validation failed",
+ "status":422,"detail":"1 field failed validation",
+ "instance":"/notifications","errors":[{"type":"union_tag_invalid",
+ "loc":["body","channel"],"msg":"Input tag 'pigeon' found using 'type' does
+ not match any of the expected tags: 'email', 'sms', 'webhook'","ctx":{…}}]}
+```

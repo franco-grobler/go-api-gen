@@ -8,6 +8,7 @@ lint := gobin / 'golangci-lint'
 
 monorepo := 'examples/monorepo/go-api-gen.yaml'
 petstore := 'examples/petstore/go-api-gen.yaml'
+unions := 'examples/unions/go-api-gen.yaml'
 micro := 'examples/microservices/go-api-gen.yaml'
 
 # Every module under examples/, which is more than one per example: the
@@ -20,6 +21,7 @@ examples/microservices/identity
 examples/microservices/billing
 examples/monorepo
 examples/petstore
+examples/unions
 ''', "\n", " ")
 
 # Keep in step with GOLANGCI_VERSION in .github/workflows/ci.yml, so a local
@@ -92,6 +94,7 @@ generate:
     {{ go }} run ./cmd/go-api-gen build -c {{ monorepo }}
     {{ go }} run ./cmd/go-api-gen unify -c {{ monorepo }}
     {{ go }} run ./cmd/go-api-gen build -c {{ petstore }}
+    {{ go }} run ./cmd/go-api-gen build -c {{ unions }}
     {{ go }} run ./cmd/go-api-gen build -c {{ micro }}
     {{ go }} run ./cmd/go-api-gen unify -c {{ micro }}
 
