@@ -248,21 +248,27 @@ func TestNamedScalarAliasesImportedTypes(t *testing.T) {
 	}
 }
 
-func TestOneOfIsRejectedClearly(t *testing.T) {
-	_, err := generate(t, oneService(pathsFor(`    Pet:
+// A union of inline objects, which have no names of their own, still gets
+// a field per variant, named for the kind of value it holds.
+func TestInlineUnionMembersAreNamedByKind(t *testing.T) {
+	out, err := generate(t, oneService(pathsFor(`    Pet:
       oneOf:
-        - { type: object, properties: { bark: { type: string } } }
-        - { type: object, properties: { meow: { type: string } } }
+        - type: object
+          required: [bark]
+          properties: { bark: { type: string } }
+        - type: object
+          required: [meow]
+          properties: { meow: { type: string } }
 `, "Pet")))
-	if err == nil {
-		t.Fatal("generation succeeded, want an unsupported-feature error")
+	if err != nil {
+		t.Fatal(err)
 	}
-	wants := []string{"oneOf/anyOf", "not supported yet", "x-go-type"}
-	for _, want := range wants {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error = %v\nwant it to mention %q", err, want)
-		}
+	types := normalize(out["gen/api/types.gen.go"])
+	if !strings.Contains(types,
+		"type Pet struct { Object *PetObject Object2 *PetObject2") {
+		t.Errorf("want a field per inline member:\n%s", types)
 	}
+	compiles(t, out)
 }
 
 // The premise of the tool, at the level of emitted Go: a shared schema is

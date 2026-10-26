@@ -8,6 +8,7 @@ Under construction. Working today:
 - [x] Tree-shaken, self-contained bundled specs, per service and unified
 - [x] Type generation: structs, enums, `allOf` embedding, inline type
       synthesis, `Optional[T]`, configurable format mapping
+- [x] `oneOf`/`anyOf` as union types, chosen by discriminator or by shape
 - [x] `check` drift gate
 - [x] Generated validation from spec constraints, with required-field
       presence tracking
@@ -22,7 +23,9 @@ Under construction. Working today:
 - [ ] Typed client
 - [ ] Test fakes
 
-`oneOf`/`anyOf` are rejected with a clear error rather than generated badly.
+A union beside `properties` or `allOf`, a union as an `allOf` member or a
+parameter, and `oneOf` with `anyOf` on one schema are rejected with a clear
+error; see [Unions](unions.md).
 
 Array and object parameters are read in the styles OpenAPI defines for
 them: `form` (exploded or not), `spaceDelimited`, `pipeDelimited`, and

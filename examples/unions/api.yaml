@@ -1,0 +1,82 @@
+openapi: 3.1.0
+info:
+  title: Notify
+  version: 1.0.0
+  description: Sends a message over email, SMS, or a webhook, now or later.
+paths:
+  /notifications:
+    post:
+      operationId: sendNotification
+      summary: Schedule a notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Notification' }
+      responses:
+        "202":
+          description: Scheduled.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Scheduled' }
+components:
+  schemas:
+    Notification:
+      type: object
+      required: [channel, message]
+      properties:
+        channel: { $ref: '#/components/schemas/Channel' }
+        message: { type: string, minLength: 1, maxLength: 160 }
+        send_at: { $ref: '#/components/schemas/SendAt' }
+
+    # A discriminated union: "type" names the member.
+    Channel:
+      description: Where the notification goes.
+      oneOf:
+        - $ref: '#/components/schemas/Email'
+        - $ref: '#/components/schemas/SMS'
+        - $ref: '#/components/schemas/Webhook'
+      discriminator:
+        propertyName: type
+    Email:
+      type: object
+      required: [type, address]
+      properties:
+        type: { type: string, enum: [email] }
+        address: { type: string, format: email, maxLength: 254 }
+    SMS:
+      type: object
+      required: [type, number]
+      properties:
+        type: { type: string, enum: [sms] }
+        number:
+          type: string
+          description: E.164, with the leading plus.
+          pattern: '^\+[1-9][0-9]{7,14}$'
+    Webhook:
+      type: object
+      required: [type, url]
+      properties:
+        type: { type: string, enum: [webhook] }
+        url: { type: string, format: uri }
+
+    # A union told apart by shape: a string is a moment, an integer a delay.
+    SendAt:
+      description: When to send it. Leave it out to send at once.
+      oneOf:
+        - title: At
+          type: string
+          format: date-time
+        - title: Delay
+          description: Seconds from now.
+          type: integer
+          minimum: 1
+          maximum: 604800
+
+    Scheduled:
+      type: object
+      required: [id, channel, send_at]
+      properties:
+        id: { type: string }
+        channel: { $ref: '#/components/schemas/Channel' }
+        send_at: { type: string, format: date-time }

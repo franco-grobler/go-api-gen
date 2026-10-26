@@ -7,6 +7,7 @@
 - [The model](model.md)
 - [Configuration](configuration.md)
 - [Optional fields](optional-fields.md)
+- [Unions](unions.md)
 - [The unified spec](unified-spec.md)
 - [The HTTP layer](http-layer.md)
   - [Handler docs](handler-docs.md)

@@ -12,6 +12,7 @@ $ go get github.com/franco-grobler/go-api-gen/runtime
 |---|---|
 | `runtime/optional` | `Optional[T]`: absent / null / set |
 | `runtime/validate` | `V`, the field-error accumulator, and `FieldError` |
+| `runtime/union` | Choosing a union's member, by discriminator or by shape |
 | `runtime/apierr` | `Problem`, the error builders, and the middleware |
 | `runtime/httpx` | Server options, middleware ordering, response writing |
 

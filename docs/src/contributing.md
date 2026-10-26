@@ -94,6 +94,7 @@ cmd/go-api-gen/          the CLI
 internal/                config, spec loading, ownership, emitters
 runtime/                 a separate module: what your services import
 examples/petstore/       one service, no shared root
+examples/unions/         one service whose contract is oneOf unions
 examples/monorepo/       two services in one module, sharing a schema root
 examples/microservices/  the same two, as three separately built modules
 docs/                    this book
@@ -101,4 +102,4 @@ testdata/openai/         OpenAI's specification, a real-world test case
 ```
 
 Each example carries the specs, the generated code, and the handlers you would
-write, and all three are built and tested in CI.
+write, and all four are built and tested in CI.

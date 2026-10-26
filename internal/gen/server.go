@@ -566,6 +566,8 @@ func (e *serverEmitter) decodeParam(
 		return e.decodeArray(d)
 	case kindMap, kindStruct:
 		return e.decodeObject(o, d)
+	case kindUnion:
+		return unsupportedParam(d, "a oneOf or anyOf")
 	}
 
 	f := e.file
@@ -611,7 +613,7 @@ func unsupportedParam(d *paramDecode, what string) error {
 // isScalar reports whether a schema parses from one string.
 func isScalar(s *spec.Schema) bool {
 	switch classify(unwrap(s)) {
-	case kindArray, kindMap, kindStruct:
+	case kindArray, kindMap, kindStruct, kindUnion:
 		return false
 	}
 	return true

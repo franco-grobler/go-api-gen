@@ -1,0 +1,9 @@
+version: 1
+
+# One service whose contract is built on unions: a channel chosen by its
+# "type", and a send time that is either a moment or a delay. See
+# docs/src/unions.md for how the generated code tells the variants apart.
+services:
+  notify:
+    spec: api.yaml
+    to: internal/api

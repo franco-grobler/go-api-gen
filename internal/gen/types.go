@@ -24,6 +24,7 @@ const (
 	kindMap                // an object constrained only by additionalProperties
 	kindScalar             // a named string, integer, number, or boolean
 	kindAny                // no constraints the Go type system can express
+	kindUnion              // a oneOf or anyOf: one of several types
 )
 
 // typeEmitter decides the Go type names for one package and declares them.
@@ -120,7 +121,7 @@ func classify(s *spec.Schema) kind {
 	case s.IsEnum():
 		return kindEnum
 	case len(s.OneOf) > 0 || len(s.AnyOf) > 0:
-		return kindStruct // rejected in declare with a specific message
+		return kindUnion
 	case len(s.Properties) > 0 || len(s.AllOf) > 0:
 		return kindStruct
 	case s.Is("array"):
@@ -185,16 +186,10 @@ func (e *typeEmitter) nameOf(s *spec.Schema) string {
 }
 
 func (e *typeEmitter) declare(f *File, s *spec.Schema, name string) error {
-	if len(s.OneOf) > 0 || len(s.AnyOf) > 0 {
-		return fmt.Errorf("%s: schema %q uses oneOf/anyOf, which is not "+
-			"supported yet.\n"+
-			"Model the variants as separate schemas, or set x-go-type to a "+
-			"hand-written Go type.",
-			s.Loc, name)
-	}
-
 	e.doc(f, s, name)
 	switch classify(s) {
+	case kindUnion:
+		return e.declareUnion(f, s, name)
 	case kindEnum:
 		return e.declareEnum(f, s, name)
 	case kindStruct:
@@ -338,6 +333,14 @@ func enumLiteral(v any, base string) (lit, str string, ok bool) {
 func (e *typeEmitter) declareStruct(
 	f *File, s *spec.Schema, name string,
 ) error {
+	for _, m := range s.AllOf {
+		if classify(unwrap(m)) == kindUnion {
+			return fmt.Errorf("%s: schema %q has a oneOf/anyOf as an allOf "+
+				"member, which is not supported yet.\n"+
+				"Move the shared properties into each variant, or set "+
+				"x-go-type to a hand-written Go type.", s.Pos, name)
+		}
+	}
 	items := structItems(e.ws, s)
 
 	f.P("type %s struct {", name)
@@ -651,7 +654,7 @@ func (e *typeEmitter) typeOf(
 	}
 
 	switch classify(s) {
-	case kindEnum, kindStruct:
+	case kindEnum, kindStruct, kindUnion:
 		name := e.dedupe.Take(owner + role)
 		e.synth[s] = name
 		e.queue = append(e.queue, queued{s, name})

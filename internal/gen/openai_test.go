@@ -18,7 +18,8 @@ var openAISpec = filepath.Join("..", "..", "testdata", "openai",
 
 // OpenAI's specification generates a server that compiles, once patched for
 // what the generator rejects on purpose: the document's own mistakes, which
-// are not valid OpenAPI 3.0, and oneOf/anyOf, which is not supported yet.
+// are not valid OpenAPI 3.0, and a union beside properties, which is not
+// supported yet.
 // Each patch is something the generator refuses with a clear error, so a
 // patch that becomes unnecessary is a feature that landed.
 func TestOpenAISpecCompiles(t *testing.T) {
@@ -61,11 +62,11 @@ func TestOpenAISpecCompiles(t *testing.T) {
 func patchOpenAI(doc *yaml.Node) {
 	walkMaps(doc, func(m *yaml.Node) {
 		switch {
-		// The generator does not support unions yet.
-		case mapHas(m, "oneOf") || mapHas(m, "anyOf"):
-			mapDel(m, "oneOf", "anyOf", "discriminator")
-			mapSet(m, "x-go-type", "json.RawMessage")
-			mapSet(m, "x-go-import", "encoding/json")
+		// A union beside properties is not supported yet. OpenAI's lists
+		// which properties are required, which is a rule, not a type.
+		case mapHas(m, "properties") &&
+			(mapHas(m, "oneOf") || mapHas(m, "anyOf")):
+			mapDel(m, "oneOf", "anyOf")
 
 		// A 3.0 author marks a reference nullable beside it, where the
 		// keyword is ignored; allOf is where it takes effect.

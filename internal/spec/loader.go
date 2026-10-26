@@ -399,7 +399,49 @@ func (l *Loader) fill(file string, n *yaml.Node, s *Schema) error {
 			p.Required = true
 		}
 	}
+	// A {type: 'null'} member is how JSON Schema makes a union nullable, and
+	// it means exactly that: the value may also be null. Dropping it leaves
+	// the members a Go type is made from, and a union of one, which is then a
+	// wrapper (see Schema.Wrapped).
+	s.OneOf = dropNull(s, s.OneOf)
+	s.AnyOf = dropNull(s, s.AnyOf)
+	s.AllOf = dropEmpty(s, s.AllOf)
 	return nil
+}
+
+// dropEmpty removes the allOf members that constrain nothing, carrying a
+// member's nullable onto the schema. allOf [X, {nullable: true}] is how some
+// OpenAPI 3.0 documents make a reference nullable, and it means a nullable X.
+func dropEmpty(s *Schema, members []*Schema) []*Schema {
+	out := members[:0]
+	for _, m := range members {
+		if !m.Named() && m.Empty() && len(m.Validate) == 0 && m.Not == nil {
+			s.Nullable = s.Nullable || m.Nullable
+			continue
+		}
+		out = append(out, m)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// dropNull removes the members of a union that accept only null, and marks
+// the union nullable when there were any.
+func dropNull(s *Schema, members []*Schema) []*Schema {
+	out := members[:0]
+	for _, m := range members {
+		if m.Nullable && m.Empty() && !m.Named() {
+			s.Nullable = true
+			continue
+		}
+		out = append(out, m)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // exclusiveBound reads exclusiveMinimum/exclusiveMaximum in either spelling:

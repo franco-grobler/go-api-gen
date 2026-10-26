@@ -136,6 +136,7 @@ jobs:
           go run ./cmd/go-api-gen build -c examples/monorepo/go-api-gen.yaml
           go run ./cmd/go-api-gen unify -c examples/monorepo/go-api-gen.yaml
           go run ./cmd/go-api-gen build -c examples/petstore/go-api-gen.yaml
+          go run ./cmd/go-api-gen build -c examples/unions/go-api-gen.yaml
           go run ./cmd/go-api-gen build -c examples/microservices/go-api-gen.yaml
           go run ./cmd/go-api-gen unify -c examples/microservices/go-api-gen.yaml
 
@@ -160,7 +161,8 @@ jobs:
                    examples/microservices/identity \
                    examples/microservices/billing \
                    examples/monorepo \
-                   examples/petstore; do
+                   examples/petstore \
+                   examples/unions; do
             echo "--- $m"
             (cd "$m" && go build ./... && go vet ./... \
               && go test -race -shuffle=on ./...) || exit 1
