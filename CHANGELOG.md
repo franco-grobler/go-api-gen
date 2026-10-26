@@ -4,6 +4,13 @@ Every release of the generator and the runtime module, which share a version.
 This file is written by git-cliff from the commit history; edit cliff.toml,
 not the entries.
 
+## [0.2.0](https://github.com/franco-grobler/go-api-gen/compare/v0.1.0...v0.2.0) - 2026-10-26
+
+### Features
+
+- **example** a notification service built on unions ([51fb723](https://github.com/franco-grobler/go-api-gen/commit/51fb723b20000dc57e491bca9b9be65012ef92b4))
+- **gen** generate oneOf and anyOf as union types ([890eba4](https://github.com/franco-grobler/go-api-gen/commit/890eba40498712fcd60470d2c168dc56a450391a))
+
 ## [0.1.0](https://github.com/franco-grobler/go-api-gen/releases/tag/v0.1.0) - 2026-10-25
 
 ### Features
