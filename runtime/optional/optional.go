@@ -99,10 +99,10 @@ func FromPtr[T any](p *T) Optional[T] {
 
 // MarshalJSON writes the value, or null when the field is null or absent.
 //
-// An absent field normally never reaches this method, because generated
-// structs tag Optional fields with omitzero. When one does, for example
-// because the value sits in a map or a slice, null is the only honest
-// rendering.
+// An absent optional field normally never reaches this method, because
+// generated structs tag it with omitzero. When one does, for example because
+// the field is required and nullable, or the value sits in a map or a slice,
+// null is the only honest rendering.
 func (o Optional[T]) MarshalJSON() ([]byte, error) {
 	if !o.set || o.null {
 		return []byte("null"), nil
