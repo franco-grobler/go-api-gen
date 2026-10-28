@@ -1,0 +1,165 @@
+name: Prepare release
+
+# The Forgejo copy of .github/workflows/prepare-release.yml; keep the two in
+# step, and cut a release from one forge only. Both push the same commit and
+# tags, so the second would find its tags taken and stop.
+#
+# Run by hand from main. Checks the commit, has git-cliff work out the version
+# and add the release to CHANGELOG.md, commits that, and tags the commit
+# vX.Y.Z and runtime/vX.Y.Z: runtime/ is its own module, and Go finds its
+# versions under tags prefixed with its directory. Pushing the tags starts
+# release.yml, which publishes. git-cliff fails on a commit that is not
+# conventional, so nothing unconventional is released.
+#
+# The push uses the RELEASE_TOKEN secret, not the workflow's own token: a push
+# made with the automatic token deliberately starts no workflows, so the tags
+# would land and nothing would publish them. It needs to be an access token
+# with write:repository scope, set as a repository secret, whose owner may
+# push to main past any branch protection.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: >-
+          Version to release: auto reads it from the commits since the last
+          release (see [bump] in cliff.toml)
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      version:
+        description: >-
+          Exact version instead, such as v1.0.0-rc.1. Overrides bump.
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+# Two releases cut at once would compute the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # Keep in step with commits.yml, release.yml and devbox.json.
+  GIT_CLIFF_VERSION: 2.13.1
+  GIT_CLIFF_SHA256: 200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249
+
+jobs:
+  guard:
+    name: Releasable
+    runs-on: docker
+    container:
+      image: node:24.12.0-bookworm
+    steps:
+      - name: Check the branch and the token
+        env:
+          REF: ${{ github.ref }}
+          HAS_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::Run this from main, not $REF."
+            exit 1
+          fi
+          if [ "$HAS_TOKEN" != true ]; then
+            echo "::error::The RELEASE_TOKEN secret is not set; see the" \
+              "comment at the top of .forgejo/workflows/prepare-release.yml."
+            exit 1
+          fi
+
+  ci:
+    name: CI
+    needs: guard
+    uses: ./.forgejo/workflows/ci.yml
+
+  tag:
+    name: Changelog and tags
+    needs: ci
+    runs-on: docker
+    container:
+      image: node:24.12.0-bookworm
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # The commit CI just passed, with every tag, so the previous
+          # release can be found.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Install git-cliff
+        run: |
+          cd "$(mktemp -d)"
+          curl -fsSLo git-cliff.tar.gz "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          echo "$GIT_CLIFF_SHA256  git-cliff.tar.gz" | sha256sum -c -
+          tar -xzf git-cliff.tar.gz --strip-components=1 -C /usr/local/bin \
+            "git-cliff-${GIT_CLIFF_VERSION}/git-cliff"
+          git-cliff --version
+
+      # git and git-cliff refuse a checkout owned by another user, which a
+      # container's root and the runner's mount are.
+      - run: git config --global --add safe.directory "$PWD"
+
+      - name: Work out the version
+        id: version
+        env:
+          # A dispatch input's default is applied here too, in case it
+          # arrives empty.
+          BUMP: ${{ inputs.bump || 'auto' }}
+          EXACT: ${{ inputs.version }}
+        run: |
+          if [ -n "$EXACT" ]; then
+            v=$EXACT
+          else
+            v=$(git cliff --config cliff.toml --bump "$BUMP" --bumped-version)
+          fi
+          # Go reads a module version only from a semver tag with the v prefix.
+          if ! [[ $v =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::$v is not a version like v1.2.3 or v1.2.3-rc.1."
+            exit 1
+          fi
+          # With nothing released since the last tag, the bumped version is
+          # that tag, and this is where that stops.
+          for t in "$v" "runtime/$v"; do
+            if git rev-parse --quiet --verify "refs/tags/$t" >/dev/null; then
+              echo "::error::Tag $t already exists."
+              exit 1
+            fi
+          done
+          echo "Releasing $v"
+          echo "version=$v" >>"$GITHUB_OUTPUT"
+
+      # Forgejo does not render a step summary, so the entry goes to the log.
+      - name: Update the changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            git cliff --config cliff.toml --unreleased --tag "$VERSION" \
+              --prepend CHANGELOG.md
+          else
+            git cliff --config cliff.toml --tag "$VERSION" -o CHANGELOG.md
+          fi
+          git cliff --config cliff.toml --unreleased --tag "$VERSION" \
+            --strip all
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          host=${GITHUB_SERVER_URL#*://}
+          git config user.name 'forgejo-actions'
+          git config user.email "forgejo-actions@noreply.${host%%/*}"
+          git add CHANGELOG.md
+          git commit -m "chore(release): $VERSION"
+          git tag -a "$VERSION" -m "go-api-gen $VERSION"
+          git tag -a "runtime/$VERSION" -m "go-api-gen runtime $VERSION"
+
+      # One atomic push: if main moved since this run started, the commit
+      # is rejected and so are the tags, and nothing is half released.
+      - name: Push
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git push --atomic origin HEAD:refs/heads/main \
+            "refs/tags/$VERSION" "refs/tags/runtime/$VERSION"

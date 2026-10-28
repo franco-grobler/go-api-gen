@@ -1,0 +1,54 @@
+name: Docs
+
+# The Forgejo copy of .github/workflows/docs.yml, building the book in docs/
+# on every change to it. Publishing stays on GitHub: the book is served by
+# GitHub Pages, which the GitHub workflow deploys from main, and this
+# instance has no Pages of its own. Here the built book is uploaded as an
+# artifact instead, to read a change's rendering before it merges.
+on:
+  push:
+    branches: [main]
+    paths: [docs/**, .forgejo/workflows/docs.yml]
+  pull_request:
+    paths: [docs/**, .forgejo/workflows/docs.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep in step with .github/workflows/docs.yml and devbox.json. The
+  # checksum is the release asset's own, as its release page lists it.
+  MDBOOK_VERSION: 0.5.4
+  MDBOOK_SHA256: 5222beabd3e37dc5be0d18ff99b79058469354db5c220153a1b92db5ba12be89
+
+jobs:
+  build:
+    name: Build the book
+    runs-on: docker
+    container:
+      image: node:24.12.0-bookworm
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install mdBook
+        run: |
+          cd "$(mktemp -d)"
+          curl -fsSLo mdbook.tar.gz "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          echo "$MDBOOK_SHA256  mdbook.tar.gz" | sha256sum -c -
+          tar -xzf mdbook.tar.gz -C /usr/local/bin mdbook
+          mdbook --version
+
+      - run: mdbook build docs
+
+      # v3, not v4: upload-artifact v4 refuses any server but github.com
+      # (its GHES check), and Forgejo serves the v3 artifact protocol.
+      - uses: https://data.forgejo.org/actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf # v3.2.2
+        with:
+          name: book
+          path: docs/book
+          retention-days: 7

@@ -1,0 +1,139 @@
+name: Release
+
+# The Forgejo copy of .github/workflows/release.yml; keep the two in step.
+#
+# A release is a pair of tags on one commit: vX.Y.Z for the generator and
+# runtime/vX.Y.Z for the runtime module. prepare-release.yml creates both, on
+# the commit that adds the release to CHANGELOG.md, and pushes them together.
+# The notes are that release's entry, which git-cliff writes again here.
+# Go needs nothing more: the module proxy serves a version straight from its
+# tag. This workflow checks the pair, runs CI on the tagged commit, and
+# records the release on this Forgejo.
+#
+# Warming the module proxy stays on GitHub: the module path is
+# github.com/franco-grobler/go-api-gen, so the proxy fetches the version from
+# GitHub, and only the GitHub workflow knows the tags have arrived there.
+on:
+  push:
+    tags: ["v[0-9]*"]
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with commits.yml and prepare-release.yml.
+  GIT_CLIFF_VERSION: 2.13.1
+  GIT_CLIFF_SHA256: 200d2535da6d9703f3bcc8a4d159c3b55eacdb01cf2148c55b3eee9dd04d5249
+
+jobs:
+  verify:
+    name: Tags are a releasable pair
+    runs-on: docker
+    container:
+      image: node:24.12.0-bookworm
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - run: git config --global --add safe.directory "$PWD"
+
+      - name: Check the tags
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::$TAG is not a semantic version."
+            exit 1
+          fi
+          # A generator without its runtime emits code nothing can build.
+          if ! git rev-parse --quiet --verify "refs/tags/runtime/$TAG" \
+              >/dev/null; then
+            echo "::error::runtime/$TAG is missing. Push both tags together:"
+            echo "git push --atomic origin $TAG runtime/$TAG"
+            exit 1
+          fi
+          if [ "$(git rev-parse "$TAG^{commit}")" != \
+               "$(git rev-parse "runtime/$TAG^{commit}")" ]; then
+            echo "::error::$TAG and runtime/$TAG are on different commits."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$TAG" origin/main; then
+            echo "::error::$TAG is not on main."
+            exit 1
+          fi
+
+  ci:
+    name: CI
+    needs: verify
+    uses: ./.forgejo/workflows/ci.yml
+
+  release:
+    name: Publish
+    needs: ci
+    runs-on: docker
+    container:
+      image: node:24.12.0-bookworm
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        run: |
+          cd "$(mktemp -d)"
+          curl -fsSLo git-cliff.tar.gz "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          echo "$GIT_CLIFF_SHA256  git-cliff.tar.gz" | sha256sum -c -
+          tar -xzf git-cliff.tar.gz --strip-components=1 -C /usr/local/bin \
+            "git-cliff-${GIT_CLIFF_VERSION}/git-cliff"
+          git-cliff --version
+
+      - run: git config --global --add safe.directory "$PWD"
+
+      # The release's entry, as CHANGELOG.md has it, then how to install it.
+      - name: Write the notes
+        run: |
+          git cliff --config cliff.toml --latest --strip all >notes.md
+          cat >>notes.md <<EOF
+
+          ## Install
+
+          \`\`\`sh
+          go install github.com/franco-grobler/go-api-gen/cmd/go-api-gen@$TAG
+          go get github.com/franco-grobler/go-api-gen/runtime@$TAG
+          \`\`\`
+
+          Generated code and the runtime are released together. Use the same
+          version of both.
+          EOF
+          cat notes.md
+
+      # The release goes through the API with the job's automatic token, on
+      # the tag the verify job checked, so no tag is made here. A version
+      # with a suffix, such as v1.2.0-rc.1, is a pre-release. The body is
+      # built by node, which the image has, so the notes are quoted as JSON
+      # whatever they contain.
+      - name: Create the Forgejo release
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const tag = process.env.TAG;
+            process.stdout.write(JSON.stringify({
+              tag_name: tag,
+              name: tag,
+              body: fs.readFileSync("notes.md", "utf8"),
+              prerelease: tag.includes("-"),
+            }));
+          ' >release.json
+          curl -fsS -X POST \
+            -H "Authorization: token $TOKEN" \
+            -H "Content-Type: application/json" \
+            --data @release.json \
+            "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/releases" \
+            -o /dev/null -w 'HTTP %{http_code}\n'
