@@ -7,6 +7,7 @@ import (
 
 	"github.com/acme/monorepo/gen/apitypes"
 	"github.com/acme/monorepo/services/billing/internal/api"
+	"github.com/franco-grobler/go-api-gen/runtime/optional"
 )
 
 // store is billing's database.
@@ -54,6 +55,24 @@ func (s *store) add(invoice api.Invoice) {
 
 	s.invoices[invoice.ID] = invoice
 	s.order = append(s.order, invoice.ID)
+}
+
+// void marks an invoice void, recording the reason when there is one. It
+// reports false when no invoice has the id.
+func (s *store) void(
+	id uuid.UUID, reason optional.Optional[string],
+) (api.Invoice, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	invoice, ok := s.invoices[id]
+	if !ok {
+		return api.Invoice{}, false
+	}
+	invoice.Status = api.InvoiceStatusVoid
+	invoice.VoidReason = reason
+	s.invoices[id] = invoice
+	return invoice, true
 }
 
 func (s *store) all() []api.Invoice {

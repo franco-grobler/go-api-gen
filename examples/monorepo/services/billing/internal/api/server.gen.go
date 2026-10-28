@@ -13,6 +13,7 @@ import (
 	"github.com/franco-grobler/go-api-gen/runtime/httpx"
 	"github.com/franco-grobler/go-api-gen/runtime/optional"
 	"github.com/franco-grobler/go-api-gen/runtime/validate"
+	"github.com/google/uuid"
 )
 
 // Handler is the service's business logic.
@@ -26,6 +27,12 @@ type Handler interface {
 	ListInvoices(ctx context.Context, req ListInvoicesRequest) (*ListInvoicesResponse, error)
 
 	CreateInvoice(ctx context.Context, req CreateInvoiceRequest) (*Invoice, error)
+
+	// VoidInvoice: Void an invoice
+	//
+	// The body is optional: send none to void an invoice without saying why,
+	// or one that gives the reason.
+	VoidInvoice(ctx context.Context, req VoidInvoiceRequest) (*Invoice, error)
 }
 
 // ListInvoicesRequest is the decoded input to ListInvoices.
@@ -59,6 +66,22 @@ type CreateInvoiceQueryParams struct {
 	// Cursor opaque pagination cursor from a previous response.
 	Cursor optional.Optional[string]
 	Limit  optional.Optional[int]
+}
+
+// VoidInvoiceRequest is the decoded input to VoidInvoice.
+type VoidInvoiceRequest struct {
+	Path VoidInvoicePathParams
+	// Body is unset when the request is sent without one.
+	Body optional.Optional[VoidInvoice]
+
+	// Raw is the underlying request, for a handler that needs the transport:
+	// authentication context, the remote address, cancellation.
+	Raw *http.Request
+}
+
+// VoidInvoicePathParams holds the parameters decoded for the request.
+type VoidInvoicePathParams struct {
+	InvoiceID uuid.UUID
 }
 
 // ServerOption configures the generated server.
@@ -110,6 +133,7 @@ func Register(mux *http.ServeMux, h Handler) {
 func register(mux *http.ServeMux, h Handler) {
 	mux.Handle("GET /invoices", handleListInvoices(h))
 	mux.Handle("POST /invoices", handleCreateInvoice(h))
+	mux.Handle("POST /invoices/{invoiceId}/void", handleVoidInvoice(h))
 }
 
 func handleListInvoices(h Handler) http.Handler {
@@ -194,5 +218,44 @@ func handleCreateInvoice(h Handler) http.Handler {
 			return
 		}
 		httpx.WriteJSON(w, r, 201, result)
+	})
+}
+
+func handleVoidInvoice(h Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req := VoidInvoiceRequest{Raw: r}
+		v := validate.New()
+		if raw := r.PathValue("invoiceId"); raw != "" {
+			var parsed uuid.UUID
+			if err := parsed.UnmarshalText([]byte(raw)); err != nil {
+				v.Field(validate.Path).Field("invoiceId").Fail("uuid_parsing", "Input should be a valid UUID")
+			} else {
+				req.Path.InvoiceID = parsed
+			}
+		} else {
+			v.Field(validate.Path).Field("invoiceId").Fail("missing", "Field required")
+		}
+		if body, ok := httpx.Body(r); ok {
+			if err := json.NewDecoder(body).Decode(&req.Body); err != nil {
+				v.Field(validate.Body).Fail("json_invalid",
+					"Input should be valid JSON")
+				apierr.Fail(r, apierr.FromValidator(v))
+				return
+			}
+			if val, ok := req.Body.Get(); ok {
+				val.Validate(v.Field(validate.Body))
+			}
+		}
+		if v.Failed() {
+			apierr.Fail(r, apierr.FromValidator(v))
+			return
+		}
+
+		result, err := h.VoidInvoice(r.Context(), req)
+		if err != nil {
+			apierr.Fail(r, err)
+			return
+		}
+		httpx.WriteJSON(w, r, 200, result)
 	})
 }
