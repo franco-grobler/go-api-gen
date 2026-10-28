@@ -23,3 +23,8 @@ HTTP 422  application/problem+json
 
 An unexpected error becomes a 500 whose detail is withheld from the caller and
 logged instead, so a database message cannot leak through by accident.
+
+A request body that cannot be decoded is reported at `["body"]` itself:
+`json_invalid` when the bytes are not JSON, and `missing` when a body the
+operation requires was not sent at all. See
+[request bodies](http-layer.md#request-bodies) for what counts as absent.

@@ -172,19 +172,17 @@ func handleCreateInvoice(h Handler) http.Handler {
 				}
 			}
 		}
-		if r.Body != nil {
-			dec := json.NewDecoder(r.Body)
-			if err := dec.Decode(&req.Body); err != nil {
+		if body, ok := httpx.Body(r); !ok {
+			v.Field(validate.Body).Fail("missing", "Field required")
+		} else {
+			if err := json.NewDecoder(body).Decode(&req.Body); err != nil {
 				v.Field(validate.Body).Fail("json_invalid",
 					"Input should be valid JSON")
 				apierr.Fail(r, apierr.FromValidator(v))
 				return
 			}
+			req.Body.Validate(v.Field(validate.Body))
 		}
-		if r.ContentLength == 0 {
-			v.Field(validate.Body).Fail("missing", "Field required")
-		}
-		req.Body.Validate(v.Field(validate.Body))
 		if v.Failed() {
 			apierr.Fail(r, apierr.FromValidator(v))
 			return
