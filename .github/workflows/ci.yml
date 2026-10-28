@@ -130,15 +130,14 @@ jobs:
             examples/monorepo/go.sum
 
       # The generator is deterministic, so regenerating must be a no-op. This
-      # is what stops a spec change landing without its generated code.
+      # is what stops a spec change landing without its generated code. build
+      # writes the unified documents too, from unified.to in each config.
       - name: Regenerate
         run: |
           go run ./cmd/go-api-gen build -c examples/monorepo/go-api-gen.yaml
-          go run ./cmd/go-api-gen unify -c examples/monorepo/go-api-gen.yaml
           go run ./cmd/go-api-gen build -c examples/petstore/go-api-gen.yaml
           go run ./cmd/go-api-gen build -c examples/unions/go-api-gen.yaml
           go run ./cmd/go-api-gen build -c examples/microservices/go-api-gen.yaml
-          go run ./cmd/go-api-gen unify -c examples/microservices/go-api-gen.yaml
 
       # git status, not git diff: diff only inspects tracked files, so a
       # generated file that was never committed would otherwise slip through.

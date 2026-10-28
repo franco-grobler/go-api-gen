@@ -1,19 +1,27 @@
 # The unified spec
 
-`build` gives each service its own document. `unify` stitches them into one
+Each service gets its own document. The unified spec stitches them into one
 platform-wide document, for an API gateway, a docs portal, or a client that
-spans services.
+spans services. With `unified.to` set, `build` writes it with everything else,
+and `check` fails when it is missing or out of date, as it does for any other
+generated file:
 
 ```console
 $ go-api-gen build
   gen/apitypes/types.gen.go
+  gen/openapi.yaml
   services/billing/internal/api/types.gen.go
   services/billing/internal/api/openapi.yaml
   services/identity/internal/api/openapi.yaml
-go-api-gen: wrote 4 of 4 files
+go-api-gen: wrote 5 of 5 files
+```
 
-$ go-api-gen unify
-go-api-gen: wrote gen/openapi.yaml
+`unify` writes the same document on its own, and can put it elsewhere or pipe
+it to another tool:
+
+```console
+$ go-api-gen unify --output dist/platform.yaml
+go-api-gen: wrote dist/platform.yaml
 
 $ go-api-gen unify --stdout | redocly lint -
 ```
