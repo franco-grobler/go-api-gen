@@ -1,0 +1,198 @@
+name: CI
+
+# The Forgejo copy of .github/workflows/ci.yml: the same four jobs, run in a
+# pinned Go container on this instance's `docker` runners. Keep the two in
+# step.
+#
+# The image is the Go that go.mod selects, so nothing downloads a toolchain,
+# and the actions are JavaScript, which the runner executes with the job
+# container's own node: the Go image has none, so each job installs
+# Debian's first. Every job also marks the checkout safe for git, which
+# refuses a repository owned by another user, as the runner's mount is: go
+# build reads it to stamp the binary, and the drift gates run git status.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The release workflows run these same checks on the tagged commit. It
+  # takes no inputs and no secrets.
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes an in-flight run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned so a linter release cannot turn a green branch red on its own.
+  # Keep in step with lint_version in the justfile.
+  GOLANGCI_VERSION: v2.13.2
+  # The container's Go and no other, even if a go.mod asks for a newer one.
+  GOTOOLCHAIN: local
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: docker
+    container:
+      image: golang:1.27.1-bookworm
+    steps:
+      - name: Node for the actions
+        run: apt-get update -qq && apt-get install -y -qq nodejs
+      - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - run: git config --global --add safe.directory "$PWD"
+      - uses: https://data.forgejo.org/actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /go/pkg/mod
+            /root/.cache/go-build
+          key: go-test-${{ hashFiles('**/go.sum') }}
+
+      - name: Build
+        run: |
+          go build ./...
+          (cd runtime && go build ./...)
+
+      - name: Vet
+        run: |
+          go vet ./...
+          (cd runtime && go vet ./...)
+
+      # -shuffle catches tests that depend on execution order; -race catches
+      # data races in the generator's caches.
+      - name: Test
+        run: |
+          go test -race -shuffle=on -covermode=atomic \
+            -coverprofile=coverage.out ./...
+          (cd runtime && go test -race -shuffle=on ./...)
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+
+      # v3, not v4: upload-artifact v4 refuses any server but github.com
+      # (its GHES check), and Forgejo serves the v3 artifact protocol.
+      - uses: https://data.forgejo.org/actions/upload-artifact@c6a366c94c3e0affe28c06c8df20a878f24da3cf # v3.2.2
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  lint:
+    name: Lint
+    runs-on: docker
+    container:
+      image: golang:1.27.1-bookworm
+    steps:
+      - name: Node for the actions
+        run: apt-get update -qq && apt-get install -y -qq nodejs
+      - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - run: git config --global --add safe.directory "$PWD"
+      - uses: https://data.forgejo.org/actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /go/pkg/mod
+            /root/.cache/go-build
+            /root/.cache/golangci-lint
+          key: go-lint-${{ env.GOLANGCI_VERSION }}-${{ hashFiles('**/go.sum') }}
+
+      # Built from source with the container's Go, which is the one go.mod
+      # selects: a release binary is built with whatever Go was current when
+      # it was cut, and the linter refuses code that targets a newer one.
+      - name: Install golangci-lint
+        run: |
+          go install \
+            "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$GOLANGCI_VERSION"
+          golangci-lint version
+
+      - name: golangci-lint
+        run: golangci-lint run
+
+      - name: golangci-lint (runtime module)
+        working-directory: runtime
+        run: golangci-lint run --config=../.golangci.yml
+
+  tidy:
+    name: Modules are tidy
+    runs-on: docker
+    container:
+      image: golang:1.27.1-bookworm
+    steps:
+      - name: Node for the actions
+        run: apt-get update -qq && apt-get install -y -qq nodejs
+      - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - run: git config --global --add safe.directory "$PWD"
+
+      # GOWORK=off so each module is tidied against its own requirements
+      # rather than the workspace's resolved set.
+      - name: go mod tidy
+        run: |
+          GOWORK=off go mod tidy
+          (cd runtime && GOWORK=off go mod tidy)
+
+      - name: Check for changes
+        run: |
+          changed=$(git status --porcelain -- '*go.mod' '*go.sum')
+          if [ -n "$changed" ]; then
+            echo "$changed"
+            echo "::error::Modules are not tidy. Run 'just tidy' and commit."
+            exit 1
+          fi
+
+  generated:
+    name: Generated code is current
+    runs-on: docker
+    container:
+      image: golang:1.27.1-bookworm
+    steps:
+      - name: Node for the actions
+        run: apt-get update -qq && apt-get install -y -qq nodejs
+      - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - run: git config --global --add safe.directory "$PWD"
+      - uses: https://data.forgejo.org/actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            /go/pkg/mod
+            /root/.cache/go-build
+          key: go-generated-${{ hashFiles('**/go.sum') }}
+
+      # The generator is deterministic, so regenerating must be a no-op. This
+      # is what stops a spec change landing without its generated code.
+      - name: Regenerate
+        run: |
+          go run ./cmd/go-api-gen build -c examples/monorepo/go-api-gen.yaml
+          go run ./cmd/go-api-gen unify -c examples/monorepo/go-api-gen.yaml
+          go run ./cmd/go-api-gen build -c examples/petstore/go-api-gen.yaml
+          go run ./cmd/go-api-gen build -c examples/unions/go-api-gen.yaml
+          go run ./cmd/go-api-gen build -c examples/microservices/go-api-gen.yaml
+          go run ./cmd/go-api-gen unify -c examples/microservices/go-api-gen.yaml
+
+      # git status, not git diff: diff only inspects tracked files, so a
+      # generated file that was never committed would otherwise slip through.
+      - name: Check for drift
+        run: |
+          changed=$(git status --porcelain -- examples)
+          if [ -n "$changed" ]; then
+            echo "$changed"
+            echo "::error::Generated output is stale or uncommitted."
+            echo "Run 'just generate' and commit the result."
+            exit 1
+          fi
+
+      # The drift gate only proves the bytes match. Generated Go also has to
+      # compile, and the examples' own tests are the only place the generated
+      # server is exercised against a hand-written handler.
+      - name: Compile and test the examples
+        run: |
+          for m in examples/microservices/schema \
+                   examples/microservices/identity \
+                   examples/microservices/billing \
+                   examples/monorepo \
+                   examples/petstore \
+                   examples/unions; do
+            echo "--- $m"
+            (cd "$m" && go build ./... && go vet ./... \
+              && go test -race -shuffle=on ./...) || exit 1
+          done

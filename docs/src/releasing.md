@@ -46,10 +46,18 @@ The tags start the **Release** workflow, which checks they are a pair on one
 commit on `main`, runs CI against it, and publishes the GitHub release with
 that version's changelog entry as its notes.
 
+Both workflows have a Forgejo copy in `.forgejo/workflows`, which does the
+same on the Forgejo instance and records the release there, through its API.
+Cut a release from one forge only: both push the same commit and tags, so a
+second run would find its tags taken and stop. `just release` starts the
+GitHub one; on Forgejo, run **Prepare release** from the repository's Actions
+tab.
+
 The push is made with a `RELEASE_TOKEN` secret, because a push made with the
 workflow's own token starts no workflows: the tags would land and nothing would
 publish them. It needs to be a fine-grained token with read and write access to
-the repository's contents, whose owner may push to `main` past any branch
+the repository's contents (on Forgejo, an access token with the
+`write:repository` scope), whose owner may push to `main` past any branch
 protection.
 
 ## The changelog

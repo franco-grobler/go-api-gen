@@ -53,8 +53,23 @@ with its reason in `.golangci.yml`: `govet`'s `shadow`, `staticcheck`'s ST1005
 the fix), and `gosec`'s G304 (reading files the user names is what a generator
 does).
 
-The linter version is pinned in both `justfile` and
-`.github/workflows/ci.yml`; keep them in step.
+The linter version is pinned in `justfile`, `.github/workflows/ci.yml` and
+`.forgejo/workflows/ci.yml`; keep them in step.
+
+## CI on two forges
+
+The repository lives on GitHub and on a Forgejo instance, and runs the same
+checks on both: `.github/workflows` for GitHub Actions and `.forgejo/workflows`
+for Forgejo Actions, one file for one file, with the same jobs and the same
+pinned tool versions. Change one, change its copy. The Forgejo jobs run in a
+pinned container — the Go image `go.mod` selects, or a Node image where no Go
+is needed — and install git-cliff, committed and mdBook from their release
+tarballs, checked against pinned checksums.
+
+Two things stay on GitHub. The book is published to GitHub Pages only; the
+Forgejo docs workflow builds it and uploads it as an artifact. And only the
+GitHub release workflow warms the Go module proxy, since the module path
+points at GitHub.
 
 ## Commits
 

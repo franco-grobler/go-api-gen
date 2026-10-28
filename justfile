@@ -1,6 +1,7 @@
 # Development entry points. CI runs the same commands; see
-# .github/workflows/ci.yml. Every tool they use but the linter comes from
-# devbox: `devbox shell`, or prefix a recipe with `devbox run --`.
+# .github/workflows/ci.yml and its Forgejo copy in .forgejo/workflows. Every
+# tool they use but the linter comes from devbox: `devbox shell`, or prefix a
+# recipe with `devbox run --`.
 
 go := env('GO', 'go')
 gobin := justfile_directory() / '.bin'
@@ -24,8 +25,9 @@ examples/petstore
 examples/unions
 ''', "\n", " ")
 
-# Keep in step with GOLANGCI_VERSION in .github/workflows/ci.yml, so a local
-# run and a CI run judge the same code the same way.
+# Keep in step with GOLANGCI_VERSION in .github/workflows/ci.yml and
+# .forgejo/workflows/ci.yml, so a local run and a CI run judge the same code
+# the same way.
 lint_version := 'v2.13.2'
 
 # Build, lint, test, and verify generated output.
