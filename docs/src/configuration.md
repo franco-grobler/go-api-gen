@@ -50,6 +50,42 @@ unified:
 | `examples` | Where operations keep examples outside the standard places — see [Handler docs](handler-docs.md). A service may override it with its own. |
 | `unified.*` | The platform-wide document — see below. |
 
+## Scalar types
+
+Without a `types` entry, a scalar maps to the Go type you would write by hand:
+
+| OpenAPI | Go |
+|---|---|
+| `string` | `string` |
+| `string`, `format: date-time` | `time.Time`: an RFC 3339 timestamp, `2026-10-27T09:30:00Z` |
+| `string`, `format: date` | `date.Date`, from the runtime module: an RFC 3339 full-date, `2026-10-27` |
+| `string`, `format: byte` or `binary` | `[]byte` |
+| `integer` | `int`; `int32` and `int64` for those formats |
+| `number` | `float64`; `float32` for `format: float` |
+| `boolean` | `bool` |
+
+Any other format, `time` and `uuid` among them, is the base type until a
+`types` entry maps it.
+
+A date is not a `time.Time`. A `time.Time` reads and writes a timestamp, so
+it would turn `?from=2026-10-27` away and answer with a time and a zone the
+contract never mentioned. `date.Date` reads exactly `YYYY-MM-DD`, rejecting a
+timestamp or a day the calendar does not have, and writes the same form back,
+in a parameter and in JSON alike. `date.Of(t)` and `d.In(loc)` convert to and
+from a `time.Time`. A team that already has a civil-date type can map the
+format to it instead:
+
+```yaml
+types:
+  format:date:
+    go: civil.Date
+    import: cloud.google.com/go/civil
+```
+
+A mapped type is decoded from a parameter through its `UnmarshalText`, and to
+and from JSON as encoding/json decides, so it needs `encoding.TextUnmarshaler`
+and should agree with its own JSON form.
+
 Shared roots and services are keyed by name rather than listed, and the name is
 the one the tool uses everywhere else: in diagnostics (`services.billing:`
 rather than `packages[2]:`), and in `unified.exclude`, which names a service

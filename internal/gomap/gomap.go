@@ -24,13 +24,21 @@ type Mapper struct {
 // New returns a Mapper backed by cfg.
 func New(cfg *config.Config) *Mapper { return &Mapper{cfg: cfg} }
 
+// DateImport is the runtime package of Date, the default Go type of a
+// format: date string.
+const DateImport = "github.com/franco-grobler/go-api-gen/runtime/date"
+
 // defaults maps a JSON Schema type and format to a Go type. An empty format
 // key is the fallback for that type.
+//
+// A date is not a time.Time: time.Time reads and writes a timestamp, so it
+// would reject "2026-10-27" and answer with "2026-10-27T00:00:00Z". The
+// runtime's date.Date reads and writes the full-date itself.
 var defaults = map[string]map[string]Type{
 	"string": {
 		"":          {Expr: "string"},
 		"date-time": {Expr: "time.Time", Import: "time"},
-		"date":      {Expr: "time.Time", Import: "time"},
+		"date":      {Expr: "date.Date", Import: DateImport},
 		"byte":      {Expr: "[]byte"},
 		"binary":    {Expr: "[]byte"},
 	},

@@ -61,13 +61,25 @@ func (s *Service) Invoices() []api.Invoice { return s.db.all() }
 // not ask" stays distinguishable from "the client asked for zero" -- though a
 // zero cannot reach here at all, since the spec sets minimum: 1 and the
 // generated code rejected it first.
+//
+// req.Query.DueBy is a date.Date, a day with no time and no zone, parsed from
+// a full-date such as ?due_by=2026-10-27; a timestamp was rejected before
+// this ran. An invoice with no due date is never due, so a client asking
+// what falls due by some day does not see it.
 func (s *Service) ListInvoices(
 	_ context.Context, req api.ListInvoicesRequest,
 ) (*api.ListInvoicesResponse, error) {
-	items, next := s.db.after(
-		req.Query.Cursor.Or(""), req.Query.Limit.Or(defaultLimit))
+	keep := func(api.Invoice) bool { return true }
+	if by, ok := req.Query.DueBy.Get(); ok {
+		keep = func(invoice api.Invoice) bool {
+			due, ok := invoice.DueOn.Get()
+			return ok && !due.After(by)
+		}
+	}
+	items, next, total := s.db.after(
+		req.Query.Cursor.Or(""), req.Query.Limit.Or(defaultLimit), keep)
 
-	page := apitypes.PageInfo{Total: s.db.count()}
+	page := apitypes.PageInfo{Total: total}
 	if next != "" {
 		page.NextCursor = optional.Some(next)
 	}
@@ -97,6 +109,7 @@ func (s *Service) CreateInvoice(
 		Payer:  payer,
 		Total:  req.Body.Total,
 		Status: api.InvoiceStatusDraft,
+		DueOn:  req.Body.DueOn,
 	}
 	s.db.add(invoice)
 	return &invoice, nil

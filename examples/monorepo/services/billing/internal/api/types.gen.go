@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 
 	"github.com/acme/monorepo/gen/apitypes"
+	"github.com/franco-grobler/go-api-gen/runtime/date"
 	"github.com/franco-grobler/go-api-gen/runtime/optional"
 	"github.com/google/uuid"
 )
@@ -18,6 +19,8 @@ type Invoice struct {
 	Status     InvoiceStatus                         `json:"status"`
 	Lines      optional.Optional[[]InvoiceLinesItem] `json:"lines,omitzero"`
 	VoidReason optional.Optional[string]             `json:"void_reason,omitzero"`
+	// DueOn the day payment is due, when the invoice has one.
+	DueOn optional.Optional[date.Date] `json:"due_on,omitzero"`
 
 	// missingFields records the required properties absent
 	// from the JSON that produced this value, so validation
@@ -55,9 +58,10 @@ func (x *Invoice) UnmarshalJSON(data []byte) error {
 }
 
 type CreateInvoice struct {
-	PayerID uuid.UUID                 `json:"payer_id"`
-	Total   apitypes.Money            `json:"total"`
-	Note    optional.Optional[string] `json:"note,omitzero"`
+	PayerID uuid.UUID                    `json:"payer_id"`
+	Total   apitypes.Money               `json:"total"`
+	Note    optional.Optional[string]    `json:"note,omitzero"`
+	DueOn   optional.Optional[date.Date] `json:"due_on,omitzero"`
 
 	// missingFields records the required properties absent
 	// from the JSON that produced this value, so validation

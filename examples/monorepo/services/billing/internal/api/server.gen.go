@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/franco-grobler/go-api-gen/runtime/apierr"
+	"github.com/franco-grobler/go-api-gen/runtime/date"
 	"github.com/franco-grobler/go-api-gen/runtime/httpx"
 	"github.com/franco-grobler/go-api-gen/runtime/optional"
 	"github.com/franco-grobler/go-api-gen/runtime/validate"
@@ -49,6 +50,8 @@ type ListInvoicesQueryParams struct {
 	// Cursor opaque pagination cursor from a previous response.
 	Cursor optional.Optional[string]
 	Limit  optional.Optional[int]
+	// DueBy only invoices due on or before this day.
+	DueBy optional.Optional[date.Date]
 }
 
 // CreateInvoiceRequest is the decoded input to CreateInvoice.
@@ -157,6 +160,14 @@ func handleListInvoices(h Handler) http.Handler {
 				if val > 100 {
 					v.Field(validate.Query).Field("limit").Fail("less_than_equal", "Input should be <= 100", "le", 100)
 				}
+			}
+		}
+		if raw := q.Get("due_by"); raw != "" {
+			var parsed date.Date
+			if err := parsed.UnmarshalText([]byte(raw)); err != nil {
+				v.Field(validate.Query).Field("due_by").Fail("date_parsing", "Input should be a valid date in the format YYYY-MM-DD")
+			} else {
+				req.Query.DueBy = optional.Some(parsed)
 			}
 		}
 		if v.Failed() {

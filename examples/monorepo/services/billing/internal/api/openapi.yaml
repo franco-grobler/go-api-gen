@@ -17,6 +17,11 @@ paths:
         get:
             operationId: listInvoices
             summary: List invoices
+            parameters:
+                - name: due_by
+                  in: query
+                  description: Only invoices due on or before this day.
+                  schema: {type: string, format: date}
             responses:
                 "200":
                     description: A page of invoices.
@@ -83,6 +88,10 @@ components:
                             description: {type: string, minLength: 1}
                             amount: {$ref: '#/components/schemas/Money'}
                 void_reason: {type: string}
+                due_on:
+                    type: string
+                    format: date
+                    description: The day payment is due, when the invoice has one.
         User:
             description: A person or machine identity known to the platform.
             type: object
@@ -142,6 +151,7 @@ components:
                 payer_id: {type: string, format: uuid}
                 total: {$ref: '#/components/schemas/Money'}
                 note: {type: string, maxLength: 500}
+                due_on: {type: string, format: date}
         VoidInvoice:
             type: object
             required: [reason]
