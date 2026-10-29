@@ -1,8 +1,8 @@
 name: CI
 
-# The Forgejo copy of .github/workflows/ci.yml: the same four jobs, run in a
-# pinned Go container on this instance's `docker` runners. Keep the two in
-# step.
+# Four jobs, run in a pinned Go container on the Forgejo instance's `docker`
+# runners. Every pipeline runs on Forgejo; GitHub holds a copy, with its
+# Actions off.
 #
 # The image is the Go that go.mod selects, so nothing downloads a toolchain,
 # and the actions are JavaScript, which the runner executes with the job

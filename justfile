@@ -1,5 +1,5 @@
 # Development entry points. CI runs the same commands; see
-# .github/workflows/ci.yml and its Forgejo copy in .forgejo/workflows. Every
+# .forgejo/workflows/ci.yml. Every
 # tool they use but the linter comes from devbox: `devbox shell`, or prefix a
 # recipe with `devbox run --`.
 
@@ -25,8 +25,8 @@ examples/petstore
 examples/unions
 ''', "\n", " ")
 
-# Keep in step with GOLANGCI_VERSION in .github/workflows/ci.yml and
-# .forgejo/workflows/ci.yml, so a local run and a CI run judge the same code
+# Keep in step with GOLANGCI_VERSION in .forgejo/workflows/ci.yml, so a
+# local run and a CI run judge the same code
 # the same way.
 lint_version := 'v2.13.2'
 
@@ -173,11 +173,12 @@ release-notes BUMP="auto":
 release BUMP="auto":
     #!/usr/bin/env bash
     set -euo pipefail
-    # The tags are made by the Prepare release workflow, so a release always
-    # comes from main as CI saw it and gets its changelog entry.
+    # The tags are made by the Prepare release workflow on Forgejo, so a
+    # release always comes from main as CI saw it and gets its changelog
+    # entry. fj finds Forgejo from the clone's remote.
     case "{{ BUMP }}" in
-        auto | patch | minor | major) input=(-f bump={{ BUMP }}) ;;
-        *) input=(-f version={{ BUMP }}) ;;
+        auto | patch | minor | major) input=bump={{ BUMP }} ;;
+        *) input=version={{ BUMP }} ;;
     esac
-    gh workflow run prepare-release.yml --ref main "${input[@]}"
-    echo "Started. Follow it with: gh run watch"
+    fj actions dispatch --inputs "$input" prepare-release.yml main
+    echo "Started. Follow it in the repository's Actions tab on Forgejo."

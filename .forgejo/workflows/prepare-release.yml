@@ -1,10 +1,6 @@
 name: Prepare release
 
-# The Forgejo copy of .github/workflows/prepare-release.yml; keep the two in
-# step, and cut a release from one forge only. Both push the same commit and
-# tags, so the second would find its tags taken and stop.
-#
-# Run by hand from main. Checks the commit, has git-cliff work out the version
+# Run by hand from main (`just release`). Checks the commit, has git-cliff work out the version
 # and add the release to CHANGELOG.md, commits that, and tags the commit
 # vX.Y.Z and runtime/vX.Y.Z: runtime/ is its own module, and Go finds its
 # versions under tags prefixed with its directory. Pushing the tags starts

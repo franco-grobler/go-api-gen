@@ -1,7 +1,5 @@
 name: Commits
 
-# The Forgejo copy of .github/workflows/commits.yml; keep the two in step.
-#
 # Every commit is a conventional commit of a type cliff.toml allows: the
 # changelog is written from them, so one that is not would be dropped from it
 # or fail the release. committed checks the message's style, per

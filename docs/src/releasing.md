@@ -43,22 +43,27 @@ This starts the **Prepare release** workflow on `main`, which:
    meanwhile, nothing is half released.
 
 The tags start the **Release** workflow, which checks they are a pair on one
-commit on `main`, runs CI against it, and publishes the GitHub release with
-that version's changelog entry as its notes.
+commit on `main`, runs CI against it, and publishes the release with that
+version's changelog entry as its notes: on Forgejo, then on GitHub, once
+Forgejo's push mirror has brought the tags there. Last, it warms the Go module
+proxy, which reads the version from GitHub.
 
-Both workflows have a Forgejo copy in `.forgejo/workflows`, which does the
-same on the Forgejo instance and records the release there, through its API.
-Cut a release from one forge only: both push the same commit and tags, so a
-second run would find its tags taken and stop. `just release` starts the
-GitHub one; on Forgejo, run **Prepare release** from the repository's Actions
-tab.
+Both workflows run on Forgejo (`.forgejo/workflows`); `just release` starts
+the first with [fj](https://codeberg.org/forgejo-contrib/forgejo-cli), or run
+**Prepare release** from the repository's Actions tab.
 
-The push is made with a `RELEASE_TOKEN` secret, because a push made with the
-workflow's own token starts no workflows: the tags would land and nothing would
-publish them. It needs to be a fine-grained token with read and write access to
-the repository's contents (on Forgejo, an access token with the
-`write:repository` scope), whose owner may push to `main` past any branch
-protection.
+Two secrets, both set by the infrastructure that makes the repository:
+
+- `RELEASE_TOKEN` pushes the commit and tags, because a push made with the
+  workflow's own token starts no workflows: the tags would land and nothing
+  would publish them. It is a Forgejo access token with the
+  `write:repository` scope, of a user that may write to this repository
+  alone and push to `main` past its branch protection.
+- `GH_APP_PRIVATE_KEY`, with the variable `GH_APP_ID`, creates the GitHub
+  release as a GitHub App with read and write access to contents. Each run
+  makes a token from them that lasts an hour and reaches this repository
+  alone. GitHub's copy takes tags only from the mirror, so the workflow adds
+  the release to a tag already there.
 
 ## The changelog
 

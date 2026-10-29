@@ -1,10 +1,11 @@
 name: Docs
 
-# The Forgejo copy of .github/workflows/docs.yml, building the book in docs/
-# on every change to it. Publishing stays on GitHub: the book is served by
-# GitHub Pages, which the GitHub workflow deploys from main, and this
-# instance has no Pages of its own. Here the built book is uploaded as an
-# artifact instead, to read a change's rendering before it merges.
+# Builds the book in docs/ on every change to it, and uploads it as an
+# artifact, to read a change's rendering before it merges. From main it is
+# also published: the built book is force-pushed as the only commit on the
+# gh-pages branch, which Forgejo's push mirror copies to GitHub, and GitHub
+# Pages serves from there. GitHub's Actions are off, and a .nojekyll file
+# lets Pages serve a branch without them, as it is, with no Jekyll build.
 on:
   push:
     branches: [main]
@@ -21,7 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Keep in step with .github/workflows/docs.yml and devbox.json. The
+  # Keep in step with devbox.json. The
   # checksum is the release asset's own, as its release page lists it.
   MDBOOK_VERSION: 0.5.4
   MDBOOK_SHA256: 5222beabd3e37dc5be0d18ff99b79058469354db5c220153a1b92db5ba12be89
@@ -32,6 +33,8 @@ jobs:
     runs-on: docker
     container:
       image: node:24.12.0-bookworm
+    permissions:
+      contents: write
     steps:
       - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -52,3 +55,25 @@ jobs:
           name: book
           path: docs/book
           retention-days: 7
+
+      # A fresh repository in the built book, so gh-pages never carries the
+      # source's history, pushed with the job's automatic token: a push with
+      # it starts no workflows, and none is wanted.
+      - name: Publish to gh-pages
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global --add safe.directory "$PWD"
+          host=${GITHUB_SERVER_URL#*://}
+          source=$(git rev-parse --short HEAD)
+          cd docs/book
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name 'forgejo-actions'
+          git config user.email "forgejo-actions@noreply.${host%%/*}"
+          git add -A
+          git commit -qm "docs: publish the book from $source"
+          git push -f \
+            "https://forgejo-actions:${TOKEN}@${host}/${GITHUB_REPOSITORY}.git" \
+            HEAD:refs/heads/gh-pages

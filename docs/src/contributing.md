@@ -53,23 +53,22 @@ with its reason in `.golangci.yml`: `govet`'s `shadow`, `staticcheck`'s ST1005
 the fix), and `gosec`'s G304 (reading files the user names is what a generator
 does).
 
-The linter version is pinned in `justfile`, `.github/workflows/ci.yml` and
-`.forgejo/workflows/ci.yml`; keep them in step.
+The linter version is pinned in `justfile` and `.forgejo/workflows/ci.yml`;
+keep them in step.
 
-## CI on two forges
+## CI
 
-The repository lives on GitHub and on a Forgejo instance, and runs the same
-checks on both: `.github/workflows` for GitHub Actions and `.forgejo/workflows`
-for Forgejo Actions, one file for one file, with the same jobs and the same
-pinned tool versions. Change one, change its copy. The Forgejo jobs run in a
-pinned container — the Go image `go.mod` selects, or a Node image where no Go
-is needed — and install git-cliff, committed and mdBook from their release
+The repository lives on a Forgejo instance, and GitHub holds a copy that
+Forgejo's push mirror keeps up to date. Every pipeline runs on Forgejo Actions,
+from `.forgejo/workflows`; GitHub's Actions are off. The jobs run in a pinned
+container — the Go image `go.mod` selects, or a Node image where no Go is
+needed — and install git-cliff, committed and mdBook from their release
 tarballs, checked against pinned checksums.
 
-Two things stay on GitHub. The book is published to GitHub Pages only; the
-Forgejo docs workflow builds it and uploads it as an artifact. And only the
-GitHub release workflow warms the Go module proxy, since the module path
-points at GitHub.
+GitHub still shows what the pipelines make. The docs workflow publishes the
+book from `main` to the `gh-pages` branch, which the mirror copies to GitHub,
+where GitHub Pages serves it. The release workflow creates each release on
+GitHub as well as on Forgejo (see [Releasing](releasing.md)).
 
 ## Commits
 

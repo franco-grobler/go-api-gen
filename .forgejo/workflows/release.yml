@@ -1,18 +1,20 @@
 name: Release
 
-# The Forgejo copy of .github/workflows/release.yml; keep the two in step.
-#
 # A release is a pair of tags on one commit: vX.Y.Z for the generator and
 # runtime/vX.Y.Z for the runtime module. prepare-release.yml creates both, on
 # the commit that adds the release to CHANGELOG.md, and pushes them together.
 # The notes are that release's entry, which git-cliff writes again here.
 # Go needs nothing more: the module proxy serves a version straight from its
 # tag. This workflow checks the pair, runs CI on the tagged commit, and
-# records the release on this Forgejo.
+# records the release on Forgejo, then on GitHub, whose Actions are off.
 #
-# Warming the module proxy stays on GitHub: the module path is
-# github.com/franco-grobler/go-api-gen, so the proxy fetches the version from
-# GitHub, and only the GitHub workflow knows the tags have arrived there.
+# GitHub's copy takes tags only from Forgejo's push mirror, so the job waits
+# for the mirror to bring them, then adds the release to the tag as the
+# GitHub App franco-grobler-forgejo-publisher. Its ID (variable GH_APP_ID)
+# and private key (secret GH_APP_PRIVATE_KEY) are set by homelab-infra, and
+# make a token for this run alone. Last, it warms the Go module proxy, which
+# fetches the version from GitHub, as the module path is
+# github.com/franco-grobler/go-api-gen.
 on:
   push:
     tags: ["v[0-9]*"]
@@ -78,6 +80,7 @@ jobs:
       contents: write
     env:
       TAG: ${{ github.ref_name }}
+      GITHUB_REPO: franco-grobler/go-api-gen
     steps:
       - uses: https://data.forgejo.org/actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -113,7 +116,8 @@ jobs:
           cat notes.md
 
       # The release goes through the API with the job's automatic token, on
-      # the tag the verify job checked, so no tag is made here. A version
+      # the tag the verify job checked, so no tag is made here. One that is
+      # there already, from a run tried again, is left as it is. A version
       # with a suffix, such as v1.2.0-rc.1, is a pre-release. The body is
       # built by node, which the image has, so the notes are quoted as JSON
       # whatever they contain.
@@ -131,9 +135,122 @@ jobs:
               prerelease: tag.includes("-"),
             }));
           ' >release.json
+          api=$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/releases
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: token $TOKEN" "$api/tags/$TAG")
+          if [ "$code" = 200 ]; then
+            echo "The Forgejo release for $TAG exists already."
+            exit 0
+          fi
           curl -fsS -X POST \
             -H "Authorization: token $TOKEN" \
             -H "Content-Type: application/json" \
             --data @release.json \
-            "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/releases" \
+            "$api" \
             -o /dev/null -w 'HTTP %{http_code}\n'
+
+      # The mirror pushes on every push, but on its own, apart from this
+      # run. Ten minutes covers a slow sync; past that, something is wrong
+      # with the mirror (Forgejo: Settings, Repository, Mirror settings).
+      - name: Wait for the tags on GitHub
+        run: |
+          url=https://github.com/$GITHUB_REPO.git
+          for _ in $(seq 60); do
+            n=$(git ls-remote --tags --refs "$url" "refs/tags/$TAG" \
+              "refs/tags/runtime/$TAG" | wc -l)
+            if [ "$n" -eq 2 ]; then
+              echo "Both tags are on GitHub."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$TAG and runtime/$TAG did not reach GitHub in ten minutes."
+          exit 1
+
+      # A JWT signed with the app's key asks GitHub for a token of the app's
+      # installation, narrowed to this repository's contents. It lasts an
+      # hour, and is revoked when the job ends.
+      - name: Get a GitHub token
+        env:
+          APP_ID: ${{ vars.GH_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+        run: |
+          if [ -z "$APP_ID" ] || [ -z "$PRIVATE_KEY" ]; then
+            echo "::error::GH_APP_ID or GH_APP_PRIVATE_KEY is not set; see" \
+              "the comment at the top of this workflow."
+            exit 1
+          fi
+          jwt=$(node -e '
+            const crypto = require("crypto");
+            const part = (o) =>
+              Buffer.from(JSON.stringify(o)).toString("base64url");
+            const now = Math.floor(Date.now() / 1000);
+            // Issued a minute back, for a slow clock; ten minutes at most.
+            const unsigned = part({ alg: "RS256", typ: "JWT" }) + "." +
+              part({ iat: now - 60, exp: now + 540, iss: process.env.APP_ID });
+            const signature = crypto
+              .sign("RSA-SHA256", Buffer.from(unsigned), process.env.PRIVATE_KEY)
+              .toString("base64url");
+            process.stdout.write(unsigned + "." + signature);
+          ')
+          field() {
+            node -e '
+              let d = "";
+              process.stdin.on("data", (c) => (d += c));
+              process.stdin.on("end", () =>
+                process.stdout.write(String(JSON.parse(d)[process.argv[1]])));
+            ' "$1"
+          }
+          gh=(-H "Accept: application/vnd.github+json"
+            -H "X-GitHub-Api-Version: 2022-11-28")
+          id=$(curl -fsS "${gh[@]}" -H "Authorization: Bearer $jwt" \
+            "https://api.github.com/repos/$GITHUB_REPO/installation" | field id)
+          node -e '
+            process.stdout.write(JSON.stringify({
+              repositories: [process.env.GITHUB_REPO.split("/")[1]],
+              permissions: { contents: "write" },
+            }));
+          ' >scope.json
+          token=$(curl -fsS -X POST "${gh[@]}" \
+            -H "Authorization: Bearer $jwt" --data @scope.json \
+            "https://api.github.com/app/installations/$id/access_tokens" |
+            field token)
+          echo "::add-mask::$token"
+          echo "GH_TOKEN=$token" >>"$GITHUB_ENV"
+
+      # The same notes, on the same tag. A release that is there already,
+      # from a run tried again, is left as it is.
+      - name: Create the GitHub release
+        run: |
+          api=https://api.github.com/repos/$GITHUB_REPO/releases
+          auth=(-H "Authorization: Bearer $GH_TOKEN"
+            -H "Accept: application/vnd.github+json"
+            -H "X-GitHub-Api-Version: 2022-11-28")
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "${auth[@]}" \
+            "$api/tags/$TAG")
+          if [ "$code" = 200 ]; then
+            echo "The GitHub release for $TAG exists already."
+            exit 0
+          fi
+          curl -fsS -X POST "${auth[@]}" \
+            -H "Content-Type: application/json" \
+            --data @release.json "$api" \
+            -o /dev/null -w 'HTTP %{http_code}\n'
+
+      # The proxy would fetch both on first use anyway. Asking now makes the
+      # first `go install` fast and lists the version on pkg.go.dev.
+      - name: Warm the module proxy
+        run: |
+          module=github.com/franco-grobler/go-api-gen
+          for m in "$module" "$module/runtime"; do
+            curl -fsS --retry 5 --retry-all-errors --retry-delay 10 \
+              "https://proxy.golang.org/$m/@v/$TAG.info"
+            echo
+          done
+
+      - name: Revoke the GitHub token
+        if: always() && env.GH_TOKEN != ''
+        run: |
+          curl -fsS -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/installation/token
