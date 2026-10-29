@@ -101,3 +101,23 @@ func (s *Service) CreateInvoice(
 	s.db.add(invoice)
 	return &invoice, nil
 }
+
+// VoidInvoice voids an invoice, with a reason if the client gave one.
+//
+// The spec makes the body optional, so req.Body is an Optional: unset when
+// the request came with no body at all, which is the client voiding without
+// saying why. A body that is sent must carry a reason, and the generated code
+// has already rejected one that does not, so a set body always has one.
+func (s *Service) VoidInvoice(
+	_ context.Context, req api.VoidInvoiceRequest,
+) (*api.Invoice, error) {
+	var reason optional.Optional[string]
+	if body, ok := req.Body.Get(); ok {
+		reason = optional.Some(body.Reason)
+	}
+	invoice, ok := s.db.void(req.Path.InvoiceID, reason)
+	if !ok {
+		return nil, apierr.NotFound("invoice", req.Path.InvoiceID)
+	}
+	return &invoice, nil
+}

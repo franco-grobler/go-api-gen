@@ -36,6 +36,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Invoice' }
+  /invoices/{invoiceId}/void:
+    post:
+      operationId: voidInvoice
+      summary: Void an invoice
+      description: >-
+        The body is optional: send none to void an invoice without saying
+        why, or one that gives the reason.
+      parameters:
+        - { name: invoiceId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VoidInvoice' }
+      responses:
+        "200":
+          description: The voided invoice.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
 components:
   schemas:
     Invoice:
@@ -56,6 +76,7 @@ components:
             properties:
               description: { type: string, minLength: 1 }
               amount: { $ref: ../../schema/common.yaml#/components/schemas/Money }
+        void_reason: { type: string }
 
     CreateInvoice:
       type: object
@@ -64,3 +85,9 @@ components:
         payer_id: { type: string, format: uuid }
         total: { $ref: ../../schema/common.yaml#/components/schemas/Money }
         note: { type: string, maxLength: 500 }
+
+    VoidInvoice:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }

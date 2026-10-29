@@ -12,11 +12,12 @@ import (
 )
 
 type Invoice struct {
-	ID     uuid.UUID                             `json:"id"`
-	Payer  apitypes.User                         `json:"payer"`
-	Total  apitypes.Money                        `json:"total"`
-	Status InvoiceStatus                         `json:"status"`
-	Lines  optional.Optional[[]InvoiceLinesItem] `json:"lines,omitzero"`
+	ID         uuid.UUID                             `json:"id"`
+	Payer      apitypes.User                         `json:"payer"`
+	Total      apitypes.Money                        `json:"total"`
+	Status     InvoiceStatus                         `json:"status"`
+	Lines      optional.Optional[[]InvoiceLinesItem] `json:"lines,omitzero"`
+	VoidReason optional.Optional[string]             `json:"void_reason,omitzero"`
 
 	// missingFields records the required properties absent
 	// from the JSON that produced this value, so validation
@@ -83,6 +84,41 @@ func (x *CreateInvoice) UnmarshalJSON(data []byte) error {
 	for _, name := range []string{
 		"payer_id",
 		"total",
+	} {
+		if _, ok := present[name]; !ok {
+			x.missingFields = append(x.missingFields, name)
+		}
+	}
+	return nil
+}
+
+type VoidInvoice struct {
+	Reason string `json:"reason"`
+
+	// missingFields records the required properties absent
+	// from the JSON that produced this value, so validation
+	// can report them by name rather than guessing from a
+	// zero value that may have been sent deliberately.
+	missingFields []string `json:"-"`
+}
+
+// UnmarshalJSON decodes VoidInvoice and records which required properties
+// were absent.
+func (x *VoidInvoice) UnmarshalJSON(data []byte) error {
+	// The alias drops this method, so decoding does not recurse.
+	type alias VoidInvoice
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*x = VoidInvoice(decoded)
+
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal(data, &present); err != nil {
+		return err
+	}
+	for _, name := range []string{
+		"reason",
 	} {
 		if _, ok := present[name]; !ok {
 			x.missingFields = append(x.missingFields, name)

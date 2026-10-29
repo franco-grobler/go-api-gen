@@ -1716,3 +1716,206 @@ components:
 	}
 	compiles(t, out)
 }
+
+// A request body with no bytes in it is absent, whether it said so with a
+// Content-Length of 0 or turned out empty as a chunked stream: a required one
+// is missing, and an optional one is left unset for the handler. Bytes that
+// are not JSON are json_invalid, and an optional body that is sent is
+// decoded and checked like a required one.
+func TestEmptyBodyIsAbsent(t *testing.T) {
+	out, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /required:
+    post:
+      operationId: postRequired
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Note' }
+      responses: { "204": { description: ok } }
+  /optional:
+    post:
+      operationId: postOptional
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Note' }
+      responses: { "204": { description: ok } }
+components:
+  schemas:
+    Note:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1 }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := normalize(out["gen/api/server.gen.go"])
+	for _, want := range []string{
+		"Body optional.Optional[Note]",
+		"if body, ok := httpx.Body(r); !ok {",
+		"if body, ok := httpx.Body(r); ok {",
+	} {
+		if !strings.Contains(server, normalize(want)) {
+			t.Errorf("want %q in\n%s", want, server)
+		}
+	}
+	if strings.Contains(server, "ContentLength") {
+		t.Errorf("Content-Length cannot tell an empty body:\n%s", server)
+	}
+	passes(t, out, map[string]string{
+		"gen/api/body_test.go": `package api
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+type handler struct {
+	required PostRequiredRequest
+	optional PostOptionalRequest
+	called   bool
+}
+
+func (h *handler) PostRequired(
+	_ context.Context, req PostRequiredRequest,
+) (struct{}, error) {
+	h.required, h.called = req, true
+	return struct{}{}, nil
+}
+
+func (h *handler) PostOptional(
+	_ context.Context, req PostOptionalRequest,
+) (struct{}, error) {
+	h.optional, h.called = req, true
+	return struct{}{}, nil
+}
+
+// chunked hides a body's length, so the client streams it chunked.
+type chunked struct{ io.Reader }
+
+// post sends a body over a real connection: only an http.Server shows how a
+// handler sees a request, with a Body that is never nil.
+func post(t *testing.T, path string, body io.Reader) (*handler, int, string) {
+	t.Helper()
+	h := &handler{}
+	srv := httptest.NewServer(NewServer(h))
+	defer srv.Close()
+	req, err := http.NewRequestWithContext(
+		t.Context(), http.MethodPost, srv.URL+path, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := body.(chunked); ok {
+		req.ContentLength = -1
+	}
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h, resp.StatusCode, string(b)
+}
+
+func wantProblem(t *testing.T, status int, body, typ string) {
+	t.Helper()
+	if status != 422 {
+		t.Fatalf("status %d, want 422: %s", status, body)
+	}
+	want := "{\"type\":\"" + typ + "\",\"loc\":[\"body\"]"
+	if !strings.Contains(body, want) {
+		t.Errorf("want %s in %s", want, body)
+	}
+	if strings.Count(body, ` + "`" + `"loc":` + "`" + `) != 1 {
+		t.Errorf("want only the body reported: %s", body)
+	}
+}
+
+func TestRequiredEmptyIsMissing(t *testing.T) {
+	h, status, body := post(t, "/required", http.NoBody)
+	wantProblem(t, status, body, "missing")
+	if h.called {
+		t.Error("the handler ran")
+	}
+}
+
+func TestRequiredEmptyChunkedIsMissing(t *testing.T) {
+	_, status, body := post(t, "/required", chunked{strings.NewReader("")})
+	wantProblem(t, status, body, "missing")
+}
+
+func TestRequiredChunkedIsDecoded(t *testing.T) {
+	h, status, body := post(t, "/required",
+		chunked{strings.NewReader(` + "`" + `{"text":"hi"}` + "`" + `)})
+	if status != 204 {
+		t.Fatalf("status %d: %s", status, body)
+	}
+	if h.required.Body.Text != "hi" {
+		t.Errorf("body = %+v", h.required.Body)
+	}
+}
+
+func TestMalformedIsInvalid(t *testing.T) {
+	for _, path := range []string{"/required", "/optional"} {
+		for _, sent := range []string{"{", "  \n", "nope"} {
+			_, status, body := post(t, path, strings.NewReader(sent))
+			wantProblem(t, status, body, "json_invalid")
+		}
+	}
+}
+
+func TestOptionalEmptyIsUnset(t *testing.T) {
+	for name, sent := range map[string]io.Reader{
+		"no body": http.NoBody,
+		"chunked": chunked{strings.NewReader("")},
+	} {
+		h, status, body := post(t, "/optional", sent)
+		if status != 204 {
+			t.Fatalf("%s: status %d: %s", name, status, body)
+		}
+		if h.optional.Body.IsSet() {
+			t.Errorf("%s: body = %v, want unset", name, h.optional.Body)
+		}
+	}
+}
+
+func TestOptionalPresentIsDecodedAndChecked(t *testing.T) {
+	h, status, body := post(t, "/optional",
+		strings.NewReader(` + "`" + `{"text":"hi"}` + "`" + `))
+	if status != 204 {
+		t.Fatalf("status %d: %s", status, body)
+	}
+	if got, ok := h.optional.Body.Get(); !ok || got.Text != "hi" {
+		t.Errorf("body = %v", h.optional.Body)
+	}
+
+	_, status, body = post(t, "/optional", strings.NewReader("{}"))
+	if status != 422 || !strings.Contains(body,
+		` + "`" + `{"type":"missing","loc":["body","text"]` + "`" + `) {
+		t.Errorf("status %d: %s", status, body)
+	}
+
+	h, status, body = post(t, "/optional", strings.NewReader("null"))
+	if status != 204 {
+		t.Fatalf("null: status %d: %s", status, body)
+	}
+	if !h.optional.Body.IsNull() {
+		t.Errorf("null: body = %v, want null", h.optional.Body)
+	}
+}
+`,
+	})
+}

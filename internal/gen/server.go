@@ -258,6 +258,14 @@ func (e *serverEmitter) requestTypes(ops []*operation) {
 		if body != nil && body.Schema != nil {
 			t, err := e.typeOf(body.Schema, o.name, "Body")
 			if err == nil {
+				if !o.op.RequestBody.Required {
+					// Unset when the request has no body, as a parameter
+					// not sent is.
+					t = fmt.Sprintf("%s.Optional[%s]",
+						e.file.Import(OptionalImport), t)
+					e.file.P("\t// Body is unset when the request is sent " +
+						"without one.")
+				}
 				e.file.P("\tBody %s", t)
 			}
 		}
@@ -440,17 +448,7 @@ func (e *serverEmitter) handler(o *operation) error {
 	}
 
 	if body != nil && body.Schema != nil {
-		e.decodeBody(o)
-	}
-
-	// Validation runs on everything that parsed, so one response reports every
-	// problem rather than the first.
-	if body != nil && body.Schema != nil &&
-		needsCheck(e.gen.mapper, body.Schema) {
-		var b strings.Builder
-		e.validateValue(&b, body.Schema, "req.Body",
-			fmt.Sprintf("v.Field(%s.Body)", e.validatePkg), "\t\t")
-		e.file.WriteRaw(b.String())
+		e.decodeBody(o, body.Schema)
 	}
 	e.file.P("\t\tif v.Failed() {")
 	e.file.P("\t\t\t%s.Fail(r, %s.FromValidator(v))", e.apierrPkg, e.apierrPkg)
@@ -932,24 +930,48 @@ func parseNoun(s *spec.Schema) string {
 	}
 }
 
-func (e *serverEmitter) decodeBody(o *operation) {
+// decodeBody decodes the JSON body and validates what it decoded.
+//
+// A body with no bytes in it is absent, which httpx.Body decides: for a
+// required body that is the missing error at ["body"], and the body's own
+// checks are skipped, since there is nothing to report them against. An
+// optional body is an optional.Optional, so a handler can tell a request sent
+// without one from one sent with an empty object; absent, it stays unset.
+// Bytes that are not JSON, whitespace included, are json_invalid.
+func (e *serverEmitter) decodeBody(o *operation, s *spec.Schema) {
 	e.jsonPkg = e.file.Import("encoding/json")
 	required := o.op.RequestBody != nil && o.op.RequestBody.Required
 
-	e.file.P("\t\tif r.Body != nil {")
-	e.file.P("\t\t\tdec := %s.NewDecoder(r.Body)", e.jsonPkg)
-	e.file.P("\t\t\tif err := dec.Decode(&req.Body); err != nil {")
+	if required {
+		e.file.P("\t\tif body, ok := %s.Body(r); !ok {", e.httpxPkg)
+		e.file.P("\t\t\tv.Field(%s.Body).Fail(\"missing\", "+
+			"\"Field required\")", e.validatePkg)
+		e.file.P("\t\t} else {")
+	} else {
+		e.file.P("\t\tif body, ok := %s.Body(r); ok {", e.httpxPkg)
+	}
+	e.file.P("\t\t\tif err := %s.NewDecoder(body).Decode(&req.Body); "+
+		"err != nil {", e.jsonPkg)
 	e.file.P("\t\t\t\tv.Field(%s.Body).Fail(\"json_invalid\",", e.validatePkg)
 	e.file.P("\t\t\t\t\t\"Input should be valid JSON\")")
 	e.file.P("\t\t\t\t%s.Fail(r, %s.FromValidator(v))",
 		e.apierrPkg, e.apierrPkg)
 	e.file.P("\t\t\t\treturn")
 	e.file.P("\t\t\t}")
-	e.file.P("\t\t}")
-	if required {
-		e.file.P("\t\tif r.ContentLength == 0 {")
-		e.file.P("\t\t\tv.Field(%s.Body).Fail(\"missing\", "+
-			"\"Field required\")", e.validatePkg)
-		e.file.P("\t\t}")
+	// Validation runs on everything that parsed, so one response reports
+	// every problem rather than the first.
+	if needsCheck(e.gen.mapper, s) {
+		var b strings.Builder
+		loc := fmt.Sprintf("v.Field(%s.Body)", e.validatePkg)
+		if required {
+			e.validateValue(&b, s, "req.Body", loc, "\t\t\t")
+		} else {
+			// A body sent as null is present but holds no value to check.
+			b.WriteString("\t\t\tif val, ok := req.Body.Get(); ok {\n")
+			e.validateValue(&b, s, "val", loc, "\t\t\t\t")
+			b.WriteString("\t\t\t}\n")
+		}
+		e.file.WriteRaw(b.String())
 	}
+	e.file.P("\t\t}")
 }

@@ -48,6 +48,21 @@ func (createInvoice CreateInvoice) Validate(v *validate.V) {
 	}
 }
 
+// Validate checks VoidInvoice against the constraints in the specification.
+func (voidInvoice VoidInvoice) Validate(v *validate.V) {
+	for _, name := range voidInvoice.missingFields {
+		v.Field(name).Fail("missing", "Field required")
+	}
+	if !validate.Absent(voidInvoice.missingFields, "reason") {
+		if utf8.RuneCountInString(string(voidInvoice.Reason)) < 1 {
+			v.Field("reason").Fail("string_too_short", "String should have at least 1 character", "min_length", 1)
+		}
+		if utf8.RuneCountInString(string(voidInvoice.Reason)) > 500 {
+			v.Field("reason").Fail("string_too_long", "String should have at most 500 characters", "max_length", 500)
+		}
+	}
+}
+
 // Validate checks ListInvoicesResponse against the constraints in the
 // specification.
 func (listInvoicesResponse ListInvoicesResponse) Validate(v *validate.V) {
