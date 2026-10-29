@@ -6,13 +6,14 @@
     "git-cliff@2.13.1",
     "committed@1.1.11",
     "mdbook@0.5.4",
-    "pre-commit@4.6.2"
+    "pre-commit@4.6.2",
+    "gopls@0.24.0"
   ],
   "shell": {
     "scripts": {
       "check": "just",
-      "docs": "just docs",
-      "test": "just test"
+      "docs":  "just docs",
+      "test":  "just test"
     }
   }
 }

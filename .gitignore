@@ -6,3 +6,6 @@
 /.bin/
 coverage.out
 /docs/book/
+
+# Personal Claude Code settings.
+.claude/settings.local.json
