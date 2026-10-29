@@ -94,11 +94,9 @@ generate:
     #!/usr/bin/env bash
     set -euo pipefail
     {{ go }} run ./cmd/go-api-gen build -c {{ monorepo }}
-    {{ go }} run ./cmd/go-api-gen unify -c {{ monorepo }}
     {{ go }} run ./cmd/go-api-gen build -c {{ petstore }}
     {{ go }} run ./cmd/go-api-gen build -c {{ unions }}
     {{ go }} run ./cmd/go-api-gen build -c {{ micro }}
-    {{ go }} run ./cmd/go-api-gen unify -c {{ micro }}
 
 # Prove the committed output matches the specs and that it compiles.
 generated: generate

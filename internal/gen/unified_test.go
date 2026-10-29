@@ -1,9 +1,11 @@
 package gen
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -474,6 +476,155 @@ func TestUnifyRejectsConflictingSecuritySchemes(t *testing.T) {
 	want := `securityScheme "bearerAuth" is declared differently`
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %v\nwant it to contain %q", err, want)
+	}
+}
+
+// writeWorkspace writes files into a fresh directory, with a go.mod, and
+// runs the generator over the config there.
+func writeWorkspace(
+	t *testing.T,
+	files map[string]string,
+) (string, *Generator) {
+	t.Helper()
+	dir := t.TempDir()
+	files["go.mod"] = "module github.com/acme/monorepo\n\ngo 1.27.1\n"
+	for name, body := range files {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir, rerun(t, dir)
+}
+
+// rerun runs the generator again over a workspace already on disk, as a
+// second invocation of the CLI would.
+func rerun(t *testing.T, dir string) *Generator {
+	t.Helper()
+	cfg, err := config.Load(filepath.Join(dir, "go-api-gen.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := workspace.Load(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := New(ws)
+	if err := g.Run(); err != nil {
+		t.Fatal(err)
+	}
+	return g
+}
+
+// A configured unified document is generated output like any other: build
+// writes it, and it is what unify writes.
+func TestBuildWritesTheUnifiedSpec(t *testing.T) {
+	dir, g := writeWorkspace(t, twoServices())
+	want, err := g.Unified()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "gen", "openapi.yaml")
+
+	changed, err := g.Write()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(changed, path) {
+		t.Errorf("Write changed %v, want it to include %s", changed, path)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("build did not write the unified spec: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("build wrote\n%s\nwant what unify writes\n%s", got, want)
+	}
+
+	stale, err := rerun(t, dir).Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 0 {
+		t.Errorf("Check after a build = %v, want nothing stale", stale)
+	}
+}
+
+// check is the drift gate, so a unified document that is missing, or that
+// lags a spec, fails it -- even when every per-service file is current.
+func TestCheckFailsOnAStaleUnifiedSpec(t *testing.T) {
+	tests := []struct {
+		name  string
+		spoil func(t *testing.T, path string)
+	}{
+		{"missing", func(t *testing.T, path string) {
+			t.Helper()
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		// The case found in a real consumer: every service's own files are
+		// current, and the unified document lacks one of the services.
+		{"missing a service", func(t *testing.T, path string) {
+			t.Helper()
+			files := twoServices()
+			files["go-api-gen.yaml"] = strings.Replace(
+				files["go-api-gen.yaml"], "unified:",
+				"unified:\n  exclude: [billing]", 1)
+			_, g := writeWorkspace(t, files)
+			old, err := g.Unified()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, old, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"edited", func(t *testing.T, path string) {
+			t.Helper()
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = f.Close() }()
+			if _, err := f.WriteString("# hand edit\n"); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir, g := writeWorkspace(t, twoServices())
+			if _, err := g.Write(); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "gen", "openapi.yaml")
+			tt.spoil(t, path)
+
+			stale, err := rerun(t, dir).Check()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(stale, []string{path}) {
+				t.Errorf("Check = %v, want exactly [%s]", stale, path)
+			}
+		})
+	}
+}
+
+// Without unified.to there is nowhere to write it, so build leaves the
+// unified document to unify --output or --stdout, as before.
+func TestNoUnifiedPathGeneratesNoUnifiedSpec(t *testing.T) {
+	files := twoServices()
+	files["go-api-gen.yaml"] = strings.Replace(files["go-api-gen.yaml"],
+		"  to: gen/openapi.yaml\n", "", 1)
+	dir, g := writeWorkspace(t, files)
+	path := filepath.Join(dir, "gen", "openapi.yaml")
+	if slices.Contains(g.Paths(), path) {
+		t.Errorf("generated %s with no unified.to configured", path)
 	}
 }
 

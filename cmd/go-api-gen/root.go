@@ -74,8 +74,9 @@ func newBuildCmd(opts *options) *cobra.Command {
 		Short: "Generate every configured output",
 		Long: `Generate every configured output.
 
-Files whose content is unchanged are left alone, so build is safe to run on
-every save and only touches what actually differs.`,
+That is every service's code and document and, when unified.to is set, the
+unified document. Files whose content is unchanged are left alone, so build is
+safe to run on every save and only touches what actually differs.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, g, err := load(opts)
@@ -119,7 +120,8 @@ func newCheckCmd(opts *options) *cobra.Command {
 		Long: `Report whether committed output is up to date, writing nothing.
 
 Generated output is deterministic, so a non-zero exit means a spec changed
-without its generated code being regenerated. This is the CI drift gate.`,
+without its generated code being regenerated. Everything build writes is
+compared, the unified document included. This is the CI drift gate.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, g, err := load(opts)
@@ -185,7 +187,8 @@ navigable. Every schema any service reaches is inlined as a component, so the
 result depends on no other file.
 
 The output path comes from unified.to in the config unless --output is
-given.`,
+given. With unified.to set, build writes the same document and check compares
+it, so unify is for writing it elsewhere: --output, or --stdout for a pipe.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, g, err := load(opts)

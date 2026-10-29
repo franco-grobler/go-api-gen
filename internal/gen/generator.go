@@ -49,6 +49,23 @@ func (g *Generator) Run() error {
 			return fmt.Errorf("service %s: %w", svc.Name, err)
 		}
 	}
+	return g.emitUnified()
+}
+
+// emitUnified adds the unified document to the generated files when the
+// config gives it a path, so build writes it and check holds it to the specs
+// like any other output. Left to the unify command alone, it went stale
+// whenever a spec changed and nobody ran unify, and check never noticed.
+func (g *Generator) emitUnified() error {
+	cfg := g.ws.Config.Unified
+	if cfg == nil || cfg.AbsTo == "" {
+		return nil
+	}
+	data, err := g.Unified()
+	if err != nil {
+		return fmt.Errorf("unified spec: %w", err)
+	}
+	g.files[cfg.AbsTo] = data
 	return nil
 }
 
