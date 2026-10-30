@@ -78,51 +78,43 @@ func (s *store) void(
 func (s *store) all() []api.Invoice {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.page(0, len(s.order))
+
+	out := make([]api.Invoice, 0, len(s.order))
+	for _, id := range s.order {
+		out = append(out, s.invoices[id])
+	}
+	return out
 }
 
-// after returns up to limit invoices following the given cursor, and the
-// cursor for the page after that.
-func (s *store) after(cursor string, limit int) ([]api.Invoice, string) {
+// after returns up to limit of the invoices keep accepts, following the
+// given cursor; the cursor for the page after that; and how many invoices
+// keep accepts in all.
+func (s *store) after(
+	cursor string, limit int, keep func(api.Invoice) bool,
+) (items []api.Invoice, next string, total int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	var kept []api.Invoice
+	for _, id := range s.order {
+		if invoice := s.invoices[id]; keep(invoice) {
+			kept = append(kept, invoice)
+		}
+	}
+
 	from := 0
 	if cursor != "" {
-		for i, id := range s.order {
-			if id.String() == cursor {
+		for i, invoice := range kept {
+			if invoice.ID.String() == cursor {
 				from = i + 1
 				break
 			}
 		}
 	}
 
-	items := s.page(from, limit)
-	next := ""
-	if from+len(items) < len(s.order) && len(items) > 0 {
+	items = kept[from:min(from+limit, len(kept))]
+	if from+len(items) < len(kept) && len(items) > 0 {
 		next = items[len(items)-1].ID.String()
 	}
-	return items, next
-}
-
-// page reads a window of the index. The caller holds the lock.
-func (s *store) page(from, limit int) []api.Invoice {
-	if from > len(s.order) {
-		from = len(s.order)
-	}
-	ids := s.order[from:]
-	if len(ids) > limit {
-		ids = ids[:limit]
-	}
-	out := make([]api.Invoice, 0, len(ids))
-	for _, id := range ids {
-		out = append(out, s.invoices[id])
-	}
-	return out
-}
-
-func (s *store) count() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.order)
+	return items, next, len(kept)
 }

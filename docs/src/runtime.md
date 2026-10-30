@@ -11,6 +11,7 @@ $ go get github.com/franco-grobler/go-api-gen/runtime
 | Package | What it holds |
 |---|---|
 | `runtime/optional` | `Optional[T]`: absent / null / set |
+| `runtime/date` | `Date`, a calendar day: what `format: date` decodes to |
 | `runtime/validate` | `V`, the field-error accumulator, and `FieldError` |
 | `runtime/union` | Choosing a union's member, by discriminator or by shape |
 | `runtime/apierr` | `Problem`, the error builders, and the middleware |

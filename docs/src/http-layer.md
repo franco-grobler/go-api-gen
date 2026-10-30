@@ -27,6 +27,25 @@ srv := api.NewServer(myHandler,
 )
 ```
 
+## Parameters
+
+Path, query and header parameters are parsed into their declared types before
+the handler runs, and a value that does not parse is a 422 at the parameter's
+own location, such as `["query", "from"]`, reported with every other failure
+in the request. Each type has its own failure:
+
+| Declared as | Accepts | Failure |
+|---|---|---|
+| `integer` | `42` | `int_parsing` |
+| `number` | `4.2` | `float_parsing` |
+| `boolean` | `true`, `false` | `bool_parsing` |
+| `format: date` | `2026-10-27` | `date_parsing` |
+| `format: date-time` | `2026-10-27T09:30:00Z` | `datetime_parsing` |
+| `format: uuid`, when mapped | a UUID | `uuid_parsing` |
+
+A date is only a date: `?from=2026-10-27T00:00:00Z` is a `date_parsing`
+failure, as is `2026-02-29`. See [scalar types](configuration.md#scalar-types).
+
 ## Request bodies
 
 A JSON request body is decoded into the request struct's `Body` field and

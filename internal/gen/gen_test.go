@@ -1919,3 +1919,207 @@ func TestOptionalPresentIsDecodedAndChecked(t *testing.T) {
 `,
 	})
 }
+
+// A format: date string is a date.Date, which reads and writes a full-date,
+// "2026-10-27", wherever it appears: a path, query or header parameter, an
+// array of them, a body field, and a response. A timestamp is not a date and
+// is rejected; format: date-time is still a time.Time and still takes one.
+func TestDateIsAFullDate(t *testing.T) {
+	out, err := generate(t, securedService(`
+openapi: 3.1.0
+info: { title: T, version: "1" }
+paths:
+  /reports/{day}:
+    post:
+      operationId: report
+      parameters:
+        - { name: day, in: path, required: true,
+            schema: { type: string, format: date } }
+        - { name: from, in: query, required: true,
+            schema: { $ref: '#/components/schemas/Day' } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: holidays, in: query, explode: false,
+            schema: { type: array, items: { type: string, format: date } } }
+        - { name: X-As-Of, in: header,
+            schema: { type: string, format: date } }
+        - { name: since, in: query,
+            schema: { type: string, format: date-time } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Period' }
+      responses:
+        "200":
+          description: The period, as the server read it.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Period' }
+components:
+  schemas:
+    Day: { type: string, format: date }
+    Period:
+      type: object
+      required: [from, to]
+      properties:
+        from: { $ref: '#/components/schemas/Day' }
+        to: { type: string, format: date }
+        at: { type: string, format: date-time }
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	types := normalize(out["gen/api/types.gen.go"])
+	for _, want := range []string{
+		`"github.com/franco-grobler/go-api-gen/runtime/date"`,
+		"type Day = date.Date",
+		"From Day `json:\"from\"`",
+		"To date.Date `json:\"to\"`",
+		"At optional.Optional[time.Time]",
+	} {
+		if !strings.Contains(types, normalize(want)) {
+			t.Errorf("want %q in\n%s", want, types)
+		}
+	}
+	server := normalize(out["gen/api/server.gen.go"])
+	if !strings.Contains(server, normalize(`"date_parsing"`)) {
+		t.Errorf("want a date_parsing failure in\n%s", server)
+	}
+	passes(t, out, map[string]string{
+		"gen/api/date_test.go": `package api
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/franco-grobler/go-api-gen/runtime/date"
+	"github.com/franco-grobler/go-api-gen/runtime/optional"
+)
+
+type handler struct {
+	got    ReportRequest
+	called bool
+}
+
+// Report answers with the dates it was sent in the query, so a test sees
+// how a date.Date is encoded as well as decoded.
+func (h *handler) Report(
+	_ context.Context, req ReportRequest,
+) (*Period, error) {
+	h.got, h.called = req, true
+	p := &Period{From: req.Query.From, To: req.Path.Day}
+	if since, ok := req.Query.Since.Get(); ok {
+		p.At = optional.Some(since)
+	}
+	return p, nil
+}
+
+func send(
+	t *testing.T, target, body string, header http.Header,
+) (*handler, *httptest.ResponseRecorder) {
+	t.Helper()
+	h := &handler{}
+	r := httptest.NewRequest("POST", target, strings.NewReader(body))
+	for k, vs := range header {
+		r.Header[k] = vs
+	}
+	w := httptest.NewRecorder()
+	NewServer(h).ServeHTTP(w, r)
+	return h, w
+}
+
+func TestFullDatesDecode(t *testing.T) {
+	h, w := send(t, "/reports/2024-02-29?from=2026-10-01&to=2026-10-27"+
+		"&holidays=2026-12-25,2026-12-26&since=2026-10-27T09:30:00Z",
+		` + "`" + `{"from":"2026-01-01","to":"2026-12-31",` + "`" + ` +
+			` + "`" + `"at":"2026-10-27T09:30:00+02:00"}` + "`" + `,
+		http.Header{"X-As-Of": {"2026-10-28"}})
+	if w.Code != 200 {
+		t.Fatalf("status %d: %s", w.Code, w.Body)
+	}
+	q := h.got.Query
+	if got := h.got.Path.Day; got != date.MustParse("2024-02-29") {
+		t.Errorf("day = %v", got)
+	}
+	if q.From != date.MustParse("2026-10-01") {
+		t.Errorf("from = %v", q.From)
+	}
+	if got, _ := q.To.Get(); got != date.MustParse("2026-10-27") {
+		t.Errorf("to = %v", q.To)
+	}
+	if got, _ := q.Holidays.Get(); len(got) != 2 ||
+		got[1] != date.MustParse("2026-12-26") {
+		t.Errorf("holidays = %v", got)
+	}
+	if got, _ := h.got.Header.XAsOf.Get(); got.String() != "2026-10-28" {
+		t.Errorf("X-As-Of = %v", got)
+	}
+	since, _ := q.Since.Get()
+	if !since.Equal(time.Date(2026, 10, 27, 9, 30, 0, 0, time.UTC)) {
+		t.Errorf("since = %v", since)
+	}
+	body, _ := h.got.Body.Get()
+	if body.From.String() != "2026-01-01" || body.To.String() != "2026-12-31" {
+		t.Errorf("body = %+v", body)
+	}
+	if at, _ := body.At.Get(); at.UTC().Hour() != 7 {
+		t.Errorf("at = %v", at)
+	}
+
+	want := ` + "`" + `{"from":"2026-10-01","to":"2024-02-29",` + "`" + ` +
+		` + "`" + `"at":"2026-10-27T09:30:00Z"}` + "`" + `
+	if got := strings.TrimSpace(w.Body.String()); got != want {
+		t.Errorf("response %s, want %s", got, want)
+	}
+}
+
+// A timestamp, an impossible day and an empty value are each reported where
+// they were sent, and the handler is not reached.
+func TestNonDatesAreRejected(t *testing.T) {
+	h, w := send(t, "/reports/2026-02-29?from=2026-10-27T00:00:00Z"+
+		"&to=&holidays=2026-12-25,2026-13-01&since=2026-10-27",
+		` + "`" + `{"from":"2026-10-27T00:00:00Z","to":"2026-12-31"}` + "`" + `,
+		http.Header{"X-As-Of": {"2026-10-28T00:00:00Z"}})
+	if w.Code != 422 {
+		t.Fatalf("status %d, want 422: %s", w.Code, w.Body)
+	}
+	if h.called {
+		t.Error("the handler ran")
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		` + "`" + `{"type":"date_parsing","loc":["path","day"]` + "`" + `,
+		` + "`" + `{"type":"date_parsing","loc":["query","from"]` + "`" + `,
+		` + "`" + `{"type":"date_parsing",` + "`" + ` +
+			` + "`" + `"loc":["query","holidays",1]` + "`" + `,
+		` + "`" + `{"type":"date_parsing","loc":["header","X-As-Of"]` + "`" + `,
+		` + "`" + `{"type":"datetime_parsing",` + "`" + ` +
+			` + "`" + `"loc":["query","since"]` + "`" + `,
+		"Input should be a valid date in the format YYYY-MM-DD",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("want %s in %s", want, body)
+		}
+	}
+}
+
+// A body field is decoded by encoding/json, and a timestamp there is as
+// wrong as it is in a parameter.
+func TestBodyTimestampIsNotADate(t *testing.T) {
+	h, w := send(t, "/reports/2026-10-27?from=2026-10-27",
+		` + "`" + `{"from":"2026-10-27T00:00:00Z","to":"2026-12-31"}` + "`" + `,
+		nil)
+	if w.Code != 422 || h.called {
+		t.Fatalf("status %d, want 422: %s", w.Code, w.Body)
+	}
+	wantLoc := ` + "`" + `"loc":["body"]` + "`" + `
+	if !strings.Contains(w.Body.String(), wantLoc) {
+		t.Errorf("want the body reported: %s", w.Body)
+	}
+}
+`,
+	})
+}

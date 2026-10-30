@@ -810,9 +810,9 @@ func (e *serverEmitter) convert(s *spec.Schema, field, raw, loc, ind string,
 	t, _ := e.gen.mapper.Scalar(s)
 	switch {
 	case t.Import != "":
-		// A mapped type such as uuid.UUID or time.Time parses through
-		// encoding.TextUnmarshaler; a type that does not implement it fails to
-		// compile here, naming itself.
+		// A mapped type such as uuid.UUID, time.Time or date.Date parses
+		// through encoding.TextUnmarshaler; a type that does not implement it
+		// fails to compile here, naming itself.
 		f.P("%svar parsed %s", ind, e.file.ImportType(t.Expr, t.Import))
 		f.P("%sif err := parsed.UnmarshalText([]byte(%s)); err != nil {",
 			ind, raw)
@@ -910,7 +910,9 @@ func parseSlug(s *spec.Schema) string {
 	switch s.Format {
 	case "uuid":
 		return "uuid_parsing"
-	case "date-time", "date":
+	case "date":
+		return "date_parsing"
+	case "date-time":
 		return "datetime_parsing"
 	default:
 		return "value_parsing"
@@ -922,7 +924,7 @@ func parseNoun(s *spec.Schema) string {
 	case "uuid":
 		return "UUID"
 	case "date":
-		return "date"
+		return "date in the format YYYY-MM-DD"
 	case "date-time":
 		return "datetime"
 	default:
