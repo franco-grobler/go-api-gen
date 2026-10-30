@@ -1,0 +1,1143 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>go-api-gen</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="A spec-first OpenAPI code generator for Go, built for microservices monorepos.">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-e96d0476.css">
+        <link rel="stylesheet" href="css/chrome-d279d366.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "searchindex-841a5de1.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-2a6fe532.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">go-api-gen</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+                        <a href="https://github.com/franco-grobler/go-api-gen" title="Git repository" aria-label="Git repository">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
+<p>A spec-first OpenAPI code generator for Go, built for microservices monorepos.</p>
+<p>An alternative to <a href="https://github.com/oapi-codegen/oapi-codegen/">oapi-codegen</a>
+with one central idea: <strong>a shared schema is authored once, generated once, and
+imported by every service that uses it</strong> — while each service still gets a
+self-contained OpenAPI document for docs and gateways.</p>
+<h2 id="the-problem"><a class="header" href="#the-problem">The problem</a></h2>
+<p>Generate Go from a bundled document and you cannot share a Go type.</p>
+<p>Bundling is what a gateway and a docs portal need: <code>redocly bundle</code> walks every
+<code>$ref</code> and inlines it, so the output depends on no other file. But by the time
+a generator reads that document, the fact that <code>User</code> arrived from a shared
+file is gone. Each service gets a private <code>type User struct</code>, so billing’s
+<code>User</code> and identity’s <code>User</code> are distinct Go types with identical fields, and
+any code that spans both needs a conversion function.</p>
+<p><code>oapi-codegen</code> offers two ways around this. Both work; both charge for it.</p>
+<ul>
+<li><strong><code>import-mapping</code></strong> generates from the <em>unbundled</em> spec, where the external
+reference is still visible, and maps that document onto a Go import path. The
+keys are matched against the reference string exactly as written, so
+<code>../../pkg/schemas/openapi.yaml</code> and <code>../../../../../pkg/schemas/openapi.yaml</code>
+are two different keys for the same package. Every relative spelling in the
+tree needs its own entry, and the two consumers of the spec drift apart:
+documentation comes from the bundle, code from the source.</li>
+<li><strong><code>x-go-type</code></strong> travels inside the document and survives bundling, so the
+pipeline keeps its shape. But a shared package generated from its own
+annotated spec imports itself, which does not compile. The shared types have
+to be hand-written, and the schema stops being their source of truth.</li>
+</ul>
+<p>Both are the same concession: sharing is bolted onto a pipeline whose only
+artefact is a bundle. go-api-gen makes ownership part of the model instead, and
+produces the bundle separately, for the readers that actually need one.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="the-model"><a class="header" href="#the-model">The model</a></h1>
+<p>Shared components live in a schema root, owned by no service. Each service’s
+spec lives beside the code that serves it and <code>$ref</code>s into that root.</p>
+<pre><code>go-api-gen.yaml              at the repo root, beside go.mod
+schema/
+  user.yaml                  User, UserStatus, Address
+  common.yaml                Money, PageInfo, shared parameters
+services/
+  billing/
+    api.yaml                 the contract
+    service.go               the handlers you write
+    internal/api/            generated from it
+  identity/
+    api.yaml
+    service.go
+    internal/api/
+gen/
+  apitypes/                  the shared schemas, as one Go package
+  openapi.yaml               the unified document
+</code></pre>
+<p>References are ordinary relative <code>$ref</code>s, so the source tree stays legible to
+every other OpenAPI tool — <code>redocly lint services/billing/api.yaml</code> reads it
+unchanged:</p>
+<pre><code class="language-yaml">payer:
+  $ref: ../../schema/user.yaml#/components/schemas/User
+</code></pre>
+<p>Two outputs come out of each service, and they bundle differently on purpose.
+Billing’s generated Go <strong>imports</strong> the shared type:</p>
+<pre><code class="language-go">import "github.com/acme/monorepo/gen/apitypes"
+
+type Invoice struct {
+	ID     uuid.UUID      `json:"id"`
+	Payer  apitypes.User  `json:"payer"`      // one Go type across every service
+	Total  apitypes.Money `json:"total"`
+	Status InvoiceStatus  `json:"status"`
+}
+</code></pre>
+<p>Billing’s <code>openapi.yaml</code> <strong>inlines</strong> it, because a gateway cannot follow a Go
+import. The document is self-contained and tree-shaken: shared schemas it
+reaches become components, shared parameters are inlined at their use sites,
+and shared schemas it never touches are left out entirely.</p>
+<p>Ownership is checked rather than assumed. A schema reached by two services must
+live in a shared root, and a Go name claimed twice is an error that names both
+claimants.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="configuration"><a class="header" href="#configuration">Configuration</a></h1>
+<p>One file, at the repo root beside <code>go.mod</code>, so no path in it needs a <code>../</code>:</p>
+<pre><code class="language-yaml">version: 1
+
+shared:
+  apitypes:
+    from: schema
+    to: gen/apitypes
+
+services:
+  billing:
+    spec: services/billing/api.yaml
+    to: services/billing/internal/api
+  identity:
+    spec: services/identity/api.yaml
+    to: services/identity/internal/api
+
+generate: [types, validate, server, spec]
+
+types:
+  format:uuid:
+    go: uuid.UUID
+    import: github.com/google/uuid
+
+errors:
+  type_base_url: https://errors.acme.io/
+
+unified:
+  to: gen/openapi.yaml
+  title: Acme Platform API
+  version: "2026.1"
+  servers:
+    - { url: https://api.acme.io, description: Production }
+  exclude: [internal-ops]
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Key</th><th>What it does</th></tr>
+</thead>
+<tbody>
+<tr><td><code>shared.&lt;name&gt;.from</code></td><td>A directory of component files, generated <strong>once</strong> into one Go package however many services reference it.</td></tr>
+<tr><td><code>shared.&lt;name&gt;.to</code></td><td>Where that package is written.</td></tr>
+<tr><td><code>services.&lt;name&gt;.spec</code></td><td>The service’s root document.</td></tr>
+<tr><td><code>services.&lt;name&gt;.to</code></td><td>Where its generated code and bundled <code>openapi.yaml</code> are written.</td></tr>
+<tr><td><code>generate</code></td><td>The default target list. A service may override it with its own <code>generate</code>.</td></tr>
+<tr><td><code>types</code></td><td>Go type overrides, keyed <code>format:&lt;name&gt;</code> for an OpenAPI format or by schema name for a single component.</td></tr>
+<tr><td><code>errors.type_base_url</code></td><td>Prefixed to an error slug to form the RFC 9457 <code>type</code> URI.</td></tr>
+<tr><td><code>errors.validation_title</code></td><td>Replaces the title of a validation failure.</td></tr>
+<tr><td><code>examples</code></td><td>Where operations keep examples outside the standard places — see <a href="#handler-docs">Handler docs</a>. A service may override it with its own.</td></tr>
+<tr><td><code>unified.*</code></td><td>The platform-wide document — see below.</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="scalar-types"><a class="header" href="#scalar-types">Scalar types</a></h2>
+<p>Without a <code>types</code> entry, a scalar maps to the Go type you would write by hand:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>OpenAPI</th><th>Go</th></tr>
+</thead>
+<tbody>
+<tr><td><code>string</code></td><td><code>string</code></td></tr>
+<tr><td><code>string</code>, <code>format: date-time</code></td><td><code>time.Time</code>: an RFC 3339 timestamp, <code>2026-10-27T09:30:00Z</code></td></tr>
+<tr><td><code>string</code>, <code>format: date</code></td><td><code>date.Date</code>, from the runtime module: an RFC 3339 full-date, <code>2026-10-27</code></td></tr>
+<tr><td><code>string</code>, <code>format: byte</code> or <code>binary</code></td><td><code>[]byte</code></td></tr>
+<tr><td><code>integer</code></td><td><code>int</code>; <code>int32</code> and <code>int64</code> for those formats</td></tr>
+<tr><td><code>number</code></td><td><code>float64</code>; <code>float32</code> for <code>format: float</code></td></tr>
+<tr><td><code>boolean</code></td><td><code>bool</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Any other format, <code>time</code> and <code>uuid</code> among them, is the base type until a
+<code>types</code> entry maps it.</p>
+<p>A date is not a <code>time.Time</code>. A <code>time.Time</code> reads and writes a timestamp, so
+it would turn <code>?from=2026-10-27</code> away and answer with a time and a zone the
+contract never mentioned. <code>date.Date</code> reads exactly <code>YYYY-MM-DD</code>, rejecting a
+timestamp or a day the calendar does not have, and writes the same form back,
+in a parameter and in JSON alike. <code>date.Of(t)</code> and <code>d.In(loc)</code> convert to and
+from a <code>time.Time</code>. A team that already has a civil-date type can map the
+format to it instead:</p>
+<pre><code class="language-yaml">types:
+  format:date:
+    go: civil.Date
+    import: cloud.google.com/go/civil
+</code></pre>
+<p>A mapped type is decoded from a parameter through its <code>UnmarshalText</code>, and to
+and from JSON as encoding/json decides, so it needs <code>encoding.TextUnmarshaler</code>
+and should agree with its own JSON form.</p>
+<p>Shared roots and services are keyed by name rather than listed, and the name is
+the one the tool uses everywhere else: in diagnostics (<code>services.billing:</code>
+rather than <code>packages[2]:</code>), and in <code>unified.exclude</code>, which names a service
+instead of repeating its output path. The Go package name is the basename of
+<code>to</code> — <code>apitypes</code>, <code>api</code> — overridable per entry with <code>package:</code>.</p>
+<p>Targets are <code>types</code>, <code>validate</code>, <code>server</code>, <code>client</code>, <code>fake</code>, and <code>spec</code>. Naming
+one pulls in what it needs: <code>server</code> implies <code>types</code>, <code>fake</code> implies <code>server</code>.
+Relative paths resolve against the config file’s directory.</p>
+<p>Loaded through <a href="https://github.com/spf13/viper">Viper</a>: YAML, JSON, or TOML,
+discovered by walking up from the working directory. Unknown keys are an error
+rather than a silent no-op. A few settings can be overridden from the
+environment with the <code>GOAPIGEN_</code> prefix, for example
+<code>GOAPIGEN_ERRORS_TYPE_BASE_URL</code> — but generated code is committed, so an
+override that differs from what CI regenerates with will fail <code>check</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="optional-fields"><a class="header" href="#optional-fields">Optional fields</a></h1>
+<p>Optional and nullable fields use <code>Optional[T]</code>, which distinguishes the three
+states JSON actually has. A pointer can only express two of them, which is why
+pointer-based models cannot implement PATCH correctly.</p>
+<pre><code class="language-go">type UpdateUser struct {
+	Name  optional.Optional[string] `json:"name,omitzero"`
+	Email optional.Optional[string] `json:"email,omitzero"`
+}
+
+req.Name.IsSet()    // was the key present at all?
+req.Email.IsNull()  // present and explicitly null: clear the field
+v, ok := req.Name.Get()
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="unions"><a class="header" href="#unions">Unions</a></h1>
+<p>A <code>oneOf</code> or <code>anyOf</code> becomes a struct with one pointer field per member, of
+which exactly one is set:</p>
+<pre><code class="language-yaml">Pet:
+  oneOf:
+    - $ref: '#/components/schemas/Cat'
+    - $ref: '#/components/schemas/Dog'
+  discriminator:
+    propertyName: pet_type
+</code></pre>
+<pre><code class="language-go">// Pet is one of Cat or Dog: exactly one field is set.
+type Pet struct {
+	Cat *Cat
+	Dog *Dog
+}
+
+switch {
+case req.Body.Pet.Cat != nil:
+	// ...
+case req.Body.Pet.Dog != nil:
+	// ...
+}
+
+return api.Pet{Dog: &amp;dog}
+</code></pre>
+<p>A member that is a named schema gives the field its name. An inline member
+is named by its <code>title</code>, or else by the kind of value it holds: <code>String</code>,
+<code>Integer</code>, <code>StringList</code>, <code>Object</code>, and so on, with a number added if two
+would share a name.</p>
+<p>Encoding writes whichever member is set. A union with no member set fails to
+encode, unless the union is nullable, in which case it encodes as <code>null</code>.</p>
+<h2 id="choosing-the-member"><a class="header" href="#choosing-the-member">Choosing the member</a></h2>
+<p>Decoding a union means working out which member the JSON is, and how depends
+on whether the schema has a discriminator.</p>
+<p><strong>With a discriminator</strong>, the value of its property picks the member. Each
+member’s value comes from the first of these that applies:</p>
+<ol>
+<li>an entry in <code>discriminator.mapping</code>;</li>
+<li>the single value the member’s own discriminator property is fixed to, by
+<code>enum</code> or <code>const</code>. Many documents leave out the mapping and rely on this,
+rather than on the schema name the specification says to fall back to;</li>
+<li>the member’s schema name.</li>
+</ol>
+<p>When two members end up with the same value, the discriminator cannot choose
+between them, and the union is decoded by shape instead.</p>
+<p><strong>Without a discriminator</strong>, the JSON is matched against the shape of each
+member. A member fits when:</p>
+<ul>
+<li>the value is a JSON kind the member accepts;</li>
+<li>for an enum or <code>const</code>, the value is one of those it allows;</li>
+<li>for an object, every required key is present, no key is undeclared when
+<code>additionalProperties</code> is <code>false</code>, and every property restricted by <code>enum</code>
+or <code>const</code> (such as a <code>type: {enum: [function]}</code>) holds an allowed value.</li>
+</ul>
+<p>When more than one member fits, the most specific wins: for an object, the
+member that declares the most of its keys, which is how Pydantic’s smart mode
+settles a union too. A tie is an error for <code>oneOf</code>. For <code>anyOf</code>, the first
+member in the tie wins.</p>
+<p>Only the shape is used to choose. Once a member is chosen, its full
+validation runs as usual, and failures are reported inside the union’s
+location.</p>
+<h3 id="how-this-differs-from-json-schema"><a class="header" href="#how-this-differs-from-json-schema">How this differs from JSON Schema</a></h3>
+<p>JSON Schema defines both keywords by full validation. A value is valid under
+<code>oneOf</code> when it passes every rule of exactly one member, and under <code>anyOf</code>
+when it passes at least one. A discriminator is only a hint for which member
+to check. The generated code departs from that in two ways:</p>
+<ul>
+<li><strong>It chooses by shape, not by every rule.</strong> Formats, lengths, bounds and
+nested properties play no part in the choice. Two members that differ only
+in those look the same, so a value can be decoded as the wrong one and
+fail that member’s validation, or be reported as <code>union_ambiguous</code> when
+only one member would accept it. Give such a union a discriminator, or a
+property fixed by <code>enum</code> or <code>const</code> in each member.</li>
+<li><strong>It accepts a <code>oneOf</code> value that fits more than one member,</strong> when one of
+them declares more of its keys. JSON Schema would reject the value. A Go
+value can only hold one member, and real documents, OpenAI’s among them,
+have <code>oneOf</code> members that overlap, so the more specific one is taken
+rather than the request refused.</li>
+</ul>
+<p>A union whose members can be told apart by kind, required keys or a fixed
+property, which is most of them, is decided exactly as JSON Schema would
+decide it.</p>
+<h2 id="errors"><a class="header" href="#errors">Errors</a></h2>
+<p>A value that is none of the members is not a decoding error: it is reported
+like any other validation failure, at the union’s location, with one of
+these types:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Type</th><th>When</th></tr>
+</thead>
+<tbody>
+<tr><td><code>union_tag_not_found</code></td><td>the discriminator property is missing, or not a string</td></tr>
+<tr><td><code>union_tag_invalid</code></td><td>the discriminator names no member</td></tr>
+<tr><td><code>union_no_match</code></td><td>no member fits the value</td></tr>
+<tr><td><code>union_ambiguous</code></td><td>a <code>oneOf</code> value fits more than one member equally</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code class="language-json">{"type": "union_tag_invalid", "loc": ["body", "pet"],
+ "msg": "Input tag 'bird' found using 'pet_type' does not match any of the expected tags: 'Dog', 'cat'",
+ "ctx": {"discriminator": "'pet_type'", "tag": "bird", "expected_tags": "'Dog', 'cat'"}}
+</code></pre>
+<h2 id="null"><a class="header" href="#null">Null</a></h2>
+<p>A <code>{type: 'null'}</code> member makes the union nullable rather than adding a
+member. A union that is left with a single member is that member, so
+<code>anyOf: [{$ref: User}, {type: 'null'}]</code> is a nullable <code>User</code>:
+<code>Optional[User]</code> on a property. <code>allOf: [{$ref: User}, {nullable: true}]</code>,
+the OpenAPI 3.0 way of writing the same thing, means the same.</p>
+<h2 id="not-supported-yet"><a class="header" href="#not-supported-yet">Not supported yet</a></h2>
+<p>Each of these is rejected with an error naming the schema:</p>
+<ul>
+<li><code>oneOf</code> or <code>anyOf</code> beside <code>properties</code> or <code>allOf</code>. Move the shared
+properties into each member.</li>
+<li><code>oneOf</code> and <code>anyOf</code> on the same schema.</li>
+<li>a union as an <code>allOf</code> member.</li>
+<li>a union as a parameter.</li>
+<li>an inline member of a discriminated union that has no discriminator value.</li>
+</ul>
+<p><code>x-go-type</code> on the union replaces all of this with a type of your own.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="the-unified-spec"><a class="header" href="#the-unified-spec">The unified spec</a></h1>
+<p>Each service gets its own document. The unified spec stitches them into one
+platform-wide document, for an API gateway, a docs portal, or a client that
+spans services. With <code>unified.to</code> set, <code>build</code> writes it with everything else,
+and <code>check</code> fails when it is missing or out of date, as it does for any other
+generated file:</p>
+<pre><code class="language-console">$ go-api-gen build
+  gen/apitypes/types.gen.go
+  gen/openapi.yaml
+  services/billing/internal/api/types.gen.go
+  services/billing/internal/api/openapi.yaml
+  services/identity/internal/api/openapi.yaml
+go-api-gen: wrote 5 of 5 files
+</code></pre>
+<p><code>unify</code> writes the same document on its own, and can put it elsewhere or pipe
+it to another tool:</p>
+<pre><code class="language-console">$ go-api-gen unify --output dist/platform.yaml
+go-api-gen: wrote dist/platform.yaml
+
+$ go-api-gen unify --stdout | redocly lint -
+</code></pre>
+<p>Paths merge method by method, so two services may serve different methods of
+the same path — but the same one is a conflict, and so is a reused
+<code>operationId</code>. Both are refused with a message naming each contributing spec.
+Operations that declare no tags of their own are tagged with their service’s
+title, so a docs renderer groups the result by service rather than showing one
+flat list of every endpoint in the monorepo.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="the-http-layer"><a class="header" href="#the-http-layer">The HTTP layer</a></h1>
+<p><code>build</code> generates the whole path from socket to handler: route registration on
+the stdlib <code>ServeMux</code>, parameter parsing, body decoding, and validation. A
+handler receives input that has already been checked.</p>
+<pre><code class="language-go">type Handler interface {
+	CreateInvoice(ctx context.Context, req CreateInvoiceRequest) (*Invoice, error)
+}
+
+srv := api.NewServer(myHandler, api.WithMiddleware(auth, logging))
+</code></pre>
+<p>The <code>errors</code> block of the config is already applied — <code>NewServer</code> seeds itself
+with it. To set something the config cannot state, start from that value
+rather than a fresh <code>apierr.Options</code>, since <code>WithErrorOptions</code> replaces the
+whole struct:</p>
+<pre><code class="language-go">opts := api.DefaultErrorOptions()   // type_base_url, validation_title
+opts.TraceID = tracing.FromRequest
+
+srv := api.NewServer(myHandler,
+	api.WithErrorOptions(opts),
+	api.WithMiddleware(auth, logging),
+)
+</code></pre>
+<h2 id="parameters"><a class="header" href="#parameters">Parameters</a></h2>
+<p>Path, query and header parameters are parsed into their declared types before
+the handler runs, and a value that does not parse is a 422 at the parameter’s
+own location, such as <code>["query", "from"]</code>, reported with every other failure
+in the request. Each type has its own failure:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Declared as</th><th>Accepts</th><th>Failure</th></tr>
+</thead>
+<tbody>
+<tr><td><code>integer</code></td><td><code>42</code></td><td><code>int_parsing</code></td></tr>
+<tr><td><code>number</code></td><td><code>4.2</code></td><td><code>float_parsing</code></td></tr>
+<tr><td><code>boolean</code></td><td><code>true</code>, <code>false</code></td><td><code>bool_parsing</code></td></tr>
+<tr><td><code>format: date</code></td><td><code>2026-10-27</code></td><td><code>date_parsing</code></td></tr>
+<tr><td><code>format: date-time</code></td><td><code>2026-10-27T09:30:00Z</code></td><td><code>datetime_parsing</code></td></tr>
+<tr><td><code>format: uuid</code>, when mapped</td><td>a UUID</td><td><code>uuid_parsing</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>A date is only a date: <code>?from=2026-10-27T00:00:00Z</code> is a <code>date_parsing</code>
+failure, as is <code>2026-02-29</code>. See <a href="#scalar-types">scalar types</a>.</p>
+<h2 id="request-bodies"><a class="header" href="#request-bodies">Request bodies</a></h2>
+<p>A JSON request body is decoded into the request struct’s <code>Body</code> field and
+checked against its schema before the handler runs. A body is <em>absent</em> when
+it holds no bytes at all: a <code>Content-Length</code> of 0, or a chunked body that ends
+before its first byte. The length header alone cannot tell, so the generated
+code reads up to the first byte to find out (<code>httpx.Body</code>).</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>The request sends</th><th><code>required: true</code></th><th><code>required: false</code> (the default)</th></tr>
+</thead>
+<tbody>
+<tr><td>no body</td><td>422, <code>missing</code> at <code>["body"]</code></td><td>the handler runs, <code>Body</code> unset</td></tr>
+<tr><td>bytes that are not JSON</td><td>422, <code>json_invalid</code> at <code>["body"]</code></td><td>the same</td></tr>
+<tr><td>only whitespace</td><td>422, <code>json_invalid</code> at <code>["body"]</code></td><td>the same</td></tr>
+<tr><td>JSON that breaks the schema</td><td>422, each failure at its own location</td><td>the same</td></tr>
+<tr><td><code>null</code></td><td>decoded as the zero value, then checked</td><td><code>Body</code> set and null, not checked</td></tr>
+</tbody>
+</table>
+</div>
+<p>A body of only whitespace is not absent: it is not JSON, so it is reported
+as such rather than quietly treated as missing.</p>
+<p>An optional body is an <code>optional.Optional</code>, so a handler can tell a request
+sent without a body from one sent with an empty object:</p>
+<pre><code class="language-go">type VoidInvoiceRequest struct {
+	Path VoidInvoicePathParams
+	// Body is unset when the request is sent without one.
+	Body optional.Optional[VoidInvoice]
+	Raw  *http.Request
+}
+
+func (s *Service) VoidInvoice(ctx context.Context, req api.VoidInvoiceRequest) (*api.Invoice, error) {
+	if body, ok := req.Body.Get(); ok {
+		// the client sent a body, and it passed validation
+	}
+	...
+}
+</code></pre>
+<p>A required body is the schema’s type itself, since it is always there by the
+time the handler runs.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="handler-docs"><a class="header" href="#handler-docs">Handler docs</a></h1>
+<p>Each <code>Handler</code> method is documented with its operation’s summary and
+description, and one example request and response: what the handler is given,
+and what it should produce.</p>
+<pre><code class="language-go">type Handler interface {
+	// CreatePet: Create a pet.
+	//
+	// Example request (A dog):
+	//
+	//	{
+	//	  "name": "Rex",
+	//	  "kind": "dog"
+	//	}
+	CreatePet(ctx context.Context, req CreatePetRequest) (*Pet, error)
+}
+</code></pre>
+<p>Examples come from the standard places first: <code>example</code> or <code>examples</code> on the
+JSON request body and the success response. A document that keeps them
+elsewhere can say where, as OpenAI’s does under <code>x-oaiMeta</code>:</p>
+<pre><code class="language-yaml">examples:
+  path: x-oaiMeta.examples   # from each operation, to one example or a list
+  request: request.curl      # from each example; default "request"
+  response: response         # default "response"
+  title: title               # default "title"
+</code></pre>
+<p>Each value is a dot-separated path. Quote a segment that contains a dot, as in
+<code>request."node.js"</code>, and use a number to index a list. A configured example
+fills in only the side the standard ones leave empty. An object, or a string
+holding JSON, is shown as indented JSON; a curl command contributes its <code>-d</code>
+body when that is JSON, and any other text is shown as written.</p>
+<p>When a schema already has an operation’s <code>&lt;Op&gt;Request</code> name, as OpenAI’s
+<code>CreateAssistantRequest</code> does, the request struct is named <code>&lt;Op&gt;Input</code>
+instead.</p>
+<p>Validation is generated Go, not tags read by reflection at runtime:</p>
+<pre><code class="language-go">func (money Money) Validate(v *validate.V) {
+	for _, name := range money.missingFields {
+		v.Field(name).Fail("missing", "Field required")
+	}
+	if utf8.RuneCountInString(money.Currency) &lt; 3 {
+		v.Field("currency").Fail("string_too_short",
+			"String should have at least 3 characters", "min_length", 3)
+	}
+}
+</code></pre>
+<p>Required fields get a generated <code>UnmarshalJSON</code> that records which keys the
+client actually sent, so an omitted field is reported as missing while a
+deliberate <code>0</code> or <code>""</code> is not. A field that was never sent is reported once:
+its other constraints are skipped rather than measured against the zero value,
+so one absent input does not produce one error per keyword.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="custom-rules"><a class="header" href="#custom-rules">Custom rules</a></h1>
+<p><code>x-validate</code> on a schema or property declares a rule you write in Go. The
+generator emits an interface and asserts the type satisfies it, so a rule named
+in the spec but never written is a compile error:</p>
+<pre><code class="language-yaml">email:
+  type: string
+  x-validate: [corporate_domain]
+</code></pre>
+<pre><code class="language-go">// generated
+type UserValidator interface {
+	ValidateEmailCorporateDomain(v *validate.V)
+}
+var _ UserValidator = User{}
+
+// yours, in a file the generator does not own
+func (u User) ValidateEmailCorporateDomain(v *validate.V) {
+	if !strings.HasSuffix(u.Email, "@acme.com") {
+		v.Fail("corporate_domain", "Email must be on the acme.com domain")
+	}
+}
+</code></pre>
+<p>Rules are pure functions of the value. A check that needs a database belongs in
+the handler, using the same error builder so the response is identical:</p>
+<pre><code class="language-go">if taken, _ := db.EmailTaken(ctx, req.Body.Email); taken {
+	return nil, apierr.Validation().
+		Field("body", "email").
+		Fail("email_taken", "already registered")
+}
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="security"><a class="header" href="#security">Security</a></h1>
+<p><code>securitySchemes</code> and <code>security</code> are read, and generate an <code>Authenticator</code> the
+server calls before any handler runs. The generator locates the credential
+where the specification says it lives; what a token <em>means</em> is not something a
+specification can say, so that part is yours.</p>
+<pre><code class="language-yaml">security:
+  - bearerAuth: []          # the document-wide default
+paths:
+  /login:
+    post:
+      security: []          # overrides it: this is how you get a token
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer }
+</code></pre>
+<pre><code class="language-go">// generated
+type Authenticator interface {
+	BearerAuth(ctx context.Context, r *http.Request, token string) (context.Context, error)
+}
+
+func NewServer(h Handler, a Authenticator, opts ...ServerOption) http.Handler
+</code></pre>
+<p>The authenticator is a parameter, not an option: a server that could be built
+without one would route requests nobody had checked. The context it returns is
+the one the handler receives, which is how the caller’s identity gets there —
+and the only way it does.</p>
+<pre><code class="language-go">func (t *Tokens) BearerAuth(
+	ctx context.Context, _ *http.Request, token string,
+) (context.Context, error) {
+	caller, ok := t.callers[token]
+	if !ok {
+		return nil, apierr.Unauthorized("this token is not recognised")
+	}
+	return context.WithValue(ctx, callerKey{}, caller), nil
+}
+</code></pre>
+<p>Returning an error refuses the request; an <code>*apierr.Problem</code> is rendered as it
+stands, so a handler that wants 403 rather than 401 says so. A missing
+credential is a 401 carrying the <code>WWW-Authenticate</code> challenge RFC 9110
+requires.</p>
+<p><code>apiKey</code> (header, query, or cookie), <code>http</code> (bearer, basic, or any registered
+scheme), <code>oauth2</code>, <code>openIdConnect</code>, and <code>mutualTLS</code> are supported. Several
+schemes in one requirement are an AND, several requirements an OR, and an
+empty requirement (<code>- {}</code>) admits a caller who presents nothing — one who
+presents a credential is still identified by it. <code>oauth2</code> and <code>openIdConnect</code>
+methods receive the scopes the operation asked for.</p>
+<p>Authentication is who the caller is; authorization is whether they may do this,
+and stays in the handler where the data is. See
+<code>examples/microservices/identity</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="errors-1"><a class="header" href="#errors-1">Errors</a></h1>
+<p>Every failure — schema constraint, custom rule, or handler-raised — leaves in
+one RFC 9457 shape:</p>
+<pre><code class="language-json">HTTP 422  application/problem+json
+{
+  "type": "https://errors.acme.io/validation_failed",
+  "title": "Request validation failed",
+  "status": 422,
+  "detail": "2 fields failed validation",
+  "instance": "/v1/invoices",
+  "trace_id": "01J8X...",
+  "errors": [
+    {"type": "missing", "loc": ["body", "payer_id"], "msg": "Field required"},
+    {"type": "string_too_long", "loc": ["body", "total", "currency"],
+     "msg": "String should have at most 3 characters",
+     "ctx": {"max_length": 3}}
+  ]
+}
+</code></pre>
+<p>An unexpected error becomes a 500 whose detail is withheld from the caller and
+logged instead, so a database message cannot leak through by accident.</p>
+<p>A request body that cannot be decoded is reported at <code>["body"]</code> itself:
+<code>json_invalid</code> when the bytes are not JSON, and <code>missing</code> when a body the
+operation requires was not sent at all. See
+<a href="#request-bodies">request bodies</a> for what counts as absent.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="the-runtime-module"><a class="header" href="#the-runtime-module">The runtime module</a></h1>
+<p>Generated code is thin. Everything that does not vary between services — the
+<code>Optional[T]</code> type, the validation accumulator, the error envelope and its
+middleware, and the server plumbing — lives in one module you install once:</p>
+<pre><code class="language-console">$ go get github.com/franco-grobler/go-api-gen/runtime
+</code></pre>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Package</th><th>What it holds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>runtime/optional</code></td><td><code>Optional[T]</code>: absent / null / set</td></tr>
+<tr><td><code>runtime/date</code></td><td><code>Date</code>, a calendar day: what <code>format: date</code> decodes to</td></tr>
+<tr><td><code>runtime/validate</code></td><td><code>V</code>, the field-error accumulator, and <code>FieldError</code></td></tr>
+<tr><td><code>runtime/union</code></td><td>Choosing a union’s member, by discriminator or by shape</td></tr>
+<tr><td><code>runtime/apierr</code></td><td><code>Problem</code>, the error builders, and the middleware</td></tr>
+<tr><td><code>runtime/httpx</code></td><td>Server options, middleware ordering, response writing</td></tr>
+</tbody>
+</table>
+</div>
+<p>It is a <strong>separate module</strong> from the generator, so depending on the generated
+code does not drag in the generator’s spec parser, Viper, or Cobra. It has no
+dependencies of its own.</p>
+<p>The generator emits only what actually differs per service: the <code>Handler</code>
+interface, the request and response types, the routing table, and the decode
+path for each operation. A shared helper is never copied into a service — that
+would be the same duplication this tool exists to remove from schemas.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="commands"><a class="header" href="#commands">Commands</a></h1>
+<pre><code>go-api-gen build     Generate every configured output
+go-api-gen check     Report whether committed output is up to date (for CI)
+go-api-gen unify     Stitch every service spec into one unified document
+</code></pre>
+<p>The CLI is built on <a href="https://github.com/spf13/cobra">Cobra</a>, so
+<code>go-api-gen completion &lt;shell&gt;</code> produces a shell completion script.</p>
+<p><code>build</code> writes everything the config describes: each service’s code and
+document, each shared root’s package, and, when <code>unified.to</code> is set, the
+<a href="#the-unified-spec">unified spec</a>. A file whose content is unchanged is left
+alone.</p>
+<p>Generated output is deterministic, so <code>check</code> is a reliable drift gate. It
+compares every file <code>build</code> would write, the unified spec included, and exits
+non-zero naming each one that is missing or differs.</p>
+<p><code>unify</code> writes the unified spec on its own: to <code>unified.to</code>, as <code>build</code> does,
+to another path with <code>--output</code>, or to standard output with <code>--stdout</code>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="examples"><a class="header" href="#examples">Examples</a></h1>
+<p>All four examples are runnable programs, not snippets. Each has a binary
+under <code>cmd/</code>, a map behind a mutex standing in for the database, request
+logging through <code>WithMiddleware</code>, and a shutdown that drains in-flight
+requests.</p>
+<p>The smallest is <code>examples/petstore</code> — one spec, one generated package, no
+shared schema root:</p>
+<pre><code>examples/petstore/
+  go-api-gen.yaml
+  api.yaml                the contract
+  cmd/petstored/main.go   flags, logger, listener, shutdown
+  service.go              the handlers you write
+  store.go                the database: a map
+  internal/api/           generated from api.yaml
+</code></pre>
+<pre><code class="language-console">$ cd examples/petstore &amp;&amp; go run ./cmd/petstored
+$ curl -s -X POST localhost:8080/pets \
+    -H 'content-type: application/json' -d '{"name":"Fido","tag":"dog"}'
+{"id":1,"name":"Fido","tag":"dog"}
+</code></pre>
+<p><code>examples/microservices</code> is the other end: two services that are built and
+deployed separately, with the shared schema a third module they both require.
+One configuration governs all three, because the contract is platform-wide
+even when the code is not — each output directory resolves its import path
+against whichever <code>go.mod</code> encloses it.</p>
+<pre><code>examples/microservices/
+  go-api-gen.yaml     one config, three modules
+  openapi.yaml        the platform document, owned by no service
+  schema/             module: the contract
+    openapi/*.yaml
+    apitypes/         generated, and required by both services below
+  identity/           module: cmd/identityd, requires schema
+  billing/            module: cmd/billingd, requires schema
+</code></pre>
+<p><code>billing.Invoice.Payer</code> is <code>apitypes.User</code> — the type from the other module,
+not a copy of it. Run both and the round trip is the point:</p>
+<pre><code class="language-console">$ (cd identity &amp;&amp; go run ./cmd/identityd) &amp;
+$ (cd billing &amp;&amp; go run ./cmd/billingd) &amp;
+$ curl -s localhost:8081/users/5b0a3f2e-0000-4000-8000-000000000001 \
+    | jq '{payer: ., total: {amount_minor: 1500, currency: "GBP"}}' \
+    | curl -s -X POST localhost:8080/invoices \
+        -H 'content-type: application/json' -d @-
+{"id":"inv_001","payer":{"id":"5b0a3f2e-...","email":"ada@example.com",
+ "status":"active"},"total":{"amount_minor":1500,"currency":"GBP"}}
+</code></pre>
+<p>Identity marshalled that payer and billing decoded it, from a different
+module, with no conversion type in between.</p>
+<p><code>examples/monorepo</code> sits between the two: one module, one binary per service
+under <code>cmd/</code>, and <code>internal/platform</code> holding the listener and shutdown that
+both share — which is the plainest thing a monorepo buys, and the reason the
+microservices example carries a copy per module instead.</p>
+<p><code>examples/unions</code> is the smallest of all: one operation, whose request is
+built on two <a href="#unions">unions</a>. <code>channel</code> is an email, an SMS, or a
+webhook, named by its <code>type</code>. <code>send_at</code> is a moment or a delay, told apart by
+whether the JSON is a string or a number:</p>
+<pre><code class="language-go">type Channel struct {
+	Email   *Email
+	Sms     *Sms
+	Webhook *Webhook
+}
+
+type SendAt struct {
+	At    *time.Time
+	Delay *int
+}
+</code></pre>
+<p>The handler switches on whichever member is set, and is only reached once
+the union has been decoded into exactly one member and that member
+validated:</p>
+<pre><code class="language-console">$ cd examples/unions &amp;&amp; go run ./cmd/notifyd
+$ curl -s -X POST localhost:8080/notifications \
+    -H 'content-type: application/json' \
+    -d '{"channel": {"type": "sms", "number": "+447700900123"},
+         "message": "Your table is ready", "send_at": 300}'
+{"id":"ntf_1","channel":{"type":"sms","number":"+447700900123"},
+ "send_at":"2026-10-26T09:05:00Z"}
+$ curl -s -X POST localhost:8080/notifications \
+    -H 'content-type: application/json' \
+    -d '{"channel": {"type": "pigeon"}, "message": "hi"}'
+{"type":"validation_failed","title":"Request validation failed",
+ "status":422,"detail":"1 field failed validation",
+ "instance":"/notifications","errors":[{"type":"union_tag_invalid",
+ "loc":["body","channel"],"msg":"Input tag 'pigeon' found using 'type' does
+ not match any of the expected tags: 'email', 'sms', 'webhook'","ctx":{…}}]}
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="status"><a class="header" href="#status">Status</a></h1>
+<p>Under construction. Working today:</p>
+<ul>
+<li><input disabled="" type="checkbox" checked=""> Cross-file <code>$ref</code> resolution with shared schema identity</li>
+<li><input disabled="" type="checkbox" checked=""> Ownership model: shared roots vs. service-local schemas, with collision
+and cross-service-leak detection</li>
+<li><input disabled="" type="checkbox" checked=""> Tree-shaken, self-contained bundled specs, per service and unified</li>
+<li><input disabled="" type="checkbox" checked=""> Type generation: structs, enums, <code>allOf</code> embedding, inline type
+synthesis, <code>Optional[T]</code>, configurable format mapping</li>
+<li><input disabled="" type="checkbox" checked=""> <code>oneOf</code>/<code>anyOf</code> as union types, chosen by discriminator or by shape</li>
+<li><input disabled="" type="checkbox" checked=""> <code>check</code> drift gate</li>
+<li><input disabled="" type="checkbox" checked=""> Generated validation from spec constraints, with required-field
+presence tracking</li>
+<li><input disabled="" type="checkbox" checked=""> <code>x-validate</code> custom rules with compile-enforced interfaces</li>
+<li><input disabled="" type="checkbox" checked=""> RFC 9457 error package and middleware</li>
+<li><input disabled="" type="checkbox" checked=""> Server: routing, parameter parsing, body decoding, typed handlers</li>
+<li><input disabled="" type="checkbox" checked=""> <code>security</code>: schemes, requirements, and a compile-enforced
+<code>Authenticator</code></li>
+<li><input disabled="" type="checkbox" checked=""> Named <code>shared</code>/<code>services</code> config, with targets implying their
+prerequisites</li>
+<li><input disabled="" type="checkbox"> Selecting one service on the command line: <code>go-api-gen build billing</code></li>
+<li><input disabled="" type="checkbox"> Typed client</li>
+<li><input disabled="" type="checkbox"> Test fakes</li>
+</ul>
+<p>A union beside <code>properties</code> or <code>allOf</code>, a union as an <code>allOf</code> member or a
+parameter, and <code>oneOf</code> with <code>anyOf</code> on one schema are rejected with a clear
+error; see <a href="#unions">Unions</a>.</p>
+<p>Array and object parameters are read in the styles OpenAPI defines for
+them: <code>form</code> (exploded or not), <code>spaceDelimited</code>, <code>pipeDelimited</code>, and
+<code>deepObject</code> in the query, and <code>simple</code> in a path or header. An array of
+arrays or objects, an object with an array or object property, and the
+<code>label</code> and <code>matrix</code> path styles are rejected with a clear error.</p>
+<p>One validation gap is <strong>silent</strong> — the constraint is accepted by the parser
+and never applied, so the generated server lets the value through. Do not rely
+on it until this says otherwise: <code>multipleOf</code>, <code>uniqueItems</code>, <code>const</code>, and
+<code>additionalProperties: false</code>, which does not reject unknown fields.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="contributing"><a class="header" href="#contributing">Contributing</a></h1>
+<h2 id="tools"><a class="header" href="#tools">Tools</a></h2>
+<p>Every tool the project uses is pinned in <code>devbox.json</code>, so a checkout builds
+the same way on any machine: Go, <a href="https://just.systems">just</a>,
+<a href="https://git-cliff.org">git-cliff</a>,
+<a href="https://github.com/crate-ci/committed">committed</a>,
+<a href="https://rust-lang.github.io/mdBook/">mdBook</a>, and
+<a href="https://pre-commit.com">pre-commit</a>.</p>
+<pre><code class="language-console">$ devbox shell        # a shell with every tool on PATH
+$ just hooks          # once: install the commit-msg hook
+</code></pre>
+<p>Or run one command without entering the shell: <code>devbox run -- just test</code>.</p>
+<p>The linter is the exception. golangci-lint refuses to lint code that targets a
+newer Go than it was built with, so <code>just lint</code> builds the pinned version from
+source with the toolchain <code>go.mod</code> selects, into <code>.bin</code>, and rebuilds it when
+either the pinned version or that toolchain changes. CI does the same.</p>
+<h2 id="recipes"><a class="header" href="#recipes">Recipes</a></h2>
+<p>Recipes live in a justfile; <code>just --list</code> prints them.</p>
+<pre><code class="language-console">$ just              # build, lint, test, and verify generated output
+$ just test         # go test -race -shuffle=on, every module
+$ just lint         # golangci-lint, the generator and the runtime
+$ just generate     # regenerate every example
+$ just tidy         # go mod tidy, every module, against its own requirements
+$ just fix          # apply the linter's automatic fixes
+$ just commits      # lint this branch's commit messages
+$ just docs         # serve this book at localhost:3000
+</code></pre>
+<p>CI runs four jobs: build and test (<code>-race -shuffle=on</code>, with coverage), lint,
+module tidiness, and a generated-code gate that regenerates the examples, fails
+on any drift, and then compiles the result — because output that diffs clean
+but does not build would pass every other check. The test suite also generates
+a server from OpenAI’s published specification and compiles it; <code>just update-openai-spec</code> refreshes the copy in <code>testdata</code>.</p>
+<h2 id="linting"><a class="header" href="#linting">Linting</a></h2>
+<p>Linting is strict. Hand-written code is held to 80 columns; generated files are
+excluded, since gofmt’s struct-tag alignment has no reason to respect a limit
+meant for human readers. Three exceptions are configured deliberately, each
+with its reason in <code>.golangci.yml</code>: <code>govet</code>’s <code>shadow</code>, <code>staticcheck</code>’s ST1005
+(several diagnostics here are deliberately two sentences — the problem, then
+the fix), and <code>gosec</code>’s G304 (reading files the user names is what a generator
+does).</p>
+<p>The linter version is pinned in <code>justfile</code> and <code>.forgejo/workflows/ci.yml</code>;
+keep them in step.</p>
+<h2 id="ci"><a class="header" href="#ci">CI</a></h2>
+<p>The repository lives on a Forgejo instance, and GitHub holds a copy that
+Forgejo’s push mirror keeps up to date. Every pipeline runs on Forgejo Actions,
+from <code>.forgejo/workflows</code>; GitHub’s Actions are off. The jobs run in a pinned
+container — the Go image <code>go.mod</code> selects, or a Node image where no Go is
+needed — and install git-cliff, committed and mdBook from their release
+tarballs, checked against pinned checksums.</p>
+<p>GitHub still shows what the pipelines make. The docs workflow publishes the
+book from <code>main</code> to the <code>gh-pages</code> branch, which the mirror copies to GitHub,
+where GitHub Pages serves it. The release workflow creates each release on
+GitHub as well as on Forgejo (see <a href="#releasing">Releasing</a>).</p>
+<h2 id="commits"><a class="header" href="#commits">Commits</a></h2>
+<p>Every commit is a <a href="https://www.conventionalcommits.org">conventional commit</a>,
+because the changelog is written from them:</p>
+<pre><code>fix(gen): a request struct yields its name to a schema that has it
+</code></pre>
+<p>Two tools check each message, in the commit-msg hook and again in CI:</p>
+<ul>
+<li><strong>committed</strong> checks its style, per <code>committed.toml</code>: an allowed type, a
+subject in lower case and at most 72 characters, body lines of at most 100
+(wrap prose at 72; the limit is for quoted code and URLs),
+and no <code>fixup!</code> or WIP commits.</li>
+<li><strong>git-cliff</strong> checks that the changelog can file it, per <code>cliff.toml</code>. It is
+stricter about a type’s spelling, and a commit it cannot file would fail the
+release.</li>
+</ul>
+<p>The allowed types are <code>feat</code>, <code>fix</code>, <code>perf</code> and <code>revert</code>, which reach the
+changelog, and <code>build</code>, <code>chore</code>, <code>ci</code>, <code>docs</code>, <code>refactor</code>, <code>style</code> and <code>test</code>,
+which do not. A <code>!</code> after the type, or a <code>BREAKING CHANGE:</code> footer, marks a
+breaking change. The two configuration files list the types separately; keep
+them in step.</p>
+<p>A pull request is merged with a merge commit or rebased, never squashed, so
+each of its commits reaches <code>main</code> and the changelog. A merge commit is titled
+<code>&lt;pull request title&gt; (#&lt;number&gt;)</code>, so CI holds the title, with that suffix, to
+the same rules; the changelog leaves merge commits out, since the commits they
+merge are listed already.</p>
+<h2 id="layout"><a class="header" href="#layout">Layout</a></h2>
+<pre><code>cmd/go-api-gen/          the CLI
+internal/                config, spec loading, ownership, emitters
+runtime/                 a separate module: what your services import
+examples/petstore/       one service, no shared root
+examples/unions/         one service whose contract is oneOf unions
+examples/monorepo/       two services in one module, sharing a schema root
+examples/microservices/  the same two, as three separately built modules
+docs/                    this book
+testdata/openai/         OpenAI's specification, a real-world test case
+</code></pre>
+<p>Each example carries the specs, the generated code, and the handlers you would
+write, and all four are built and tested in CI.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="releasing"><a class="header" href="#releasing">Releasing</a></h1>
+<p>The generator and the runtime module are released together, under one
+version. A release is a pair of tags on one commit, <code>vX.Y.Z</code> for the generator
+and <code>runtime/vX.Y.Z</code> for the runtime, since <code>runtime/</code> is a module of its own
+and Go finds its versions under tags prefixed with its directory. Go needs
+nothing more: the module proxy serves a version straight from its tag.</p>
+<h2 id="the-version"><a class="header" href="#the-version">The version</a></h2>
+<p><a href="https://git-cliff.org">git-cliff</a> works the version out from the commits since
+the last release, by the <code>[bump]</code> rules in <code>cliff.toml</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Since the last release</th><th>Before 1.0.0</th><th>From 1.0.0</th></tr>
+</thead>
+<tbody>
+<tr><td>a breaking change</td><td>minor</td><td>major</td></tr>
+<tr><td>a <code>feat</code></td><td>minor</td><td>minor</td></tr>
+<tr><td>anything else</td><td>patch</td><td>patch</td></tr>
+</tbody>
+</table>
+</div>
+<p>The first release is <code>v0.1.0</code>. Leaving 0.x is a deliberate choice, made by
+asking for <code>v1.0.0</code> explicitly.</p>
+<p>Preview what a release would say, without making one:</p>
+<pre><code class="language-console">$ just release-notes          # the next entry, version worked out
+$ just release-notes minor    # as a minor release
+</code></pre>
+<h2 id="cutting-a-release"><a class="header" href="#cutting-a-release">Cutting a release</a></h2>
+<pre><code class="language-console">$ just release                # version from the commits
+$ just release minor          # or patch, major, or an exact v1.0.0-rc.1
+</code></pre>
+<p>This starts the <strong>Prepare release</strong> workflow on <code>main</code>, which:</p>
+<ol>
+<li>runs CI on the commit;</li>
+<li>has git-cliff work out the version and add its entry to <code>CHANGELOG.md</code>;</li>
+<li>commits that as <code>chore(release): vX.Y.Z</code> and tags it with both tags;</li>
+<li>pushes the commit and both tags in one atomic push, so if <code>main</code> moved
+meanwhile, nothing is half released.</li>
+</ol>
+<p>The tags start the <strong>Release</strong> workflow, which checks they are a pair on one
+commit on <code>main</code>, runs CI against it, and publishes the release with that
+version’s changelog entry as its notes: on Forgejo, then on GitHub, once
+Forgejo’s push mirror has brought the tags there. Last, it warms the Go module
+proxy, which reads the version from GitHub.</p>
+<p>Both workflows run on Forgejo (<code>.forgejo/workflows</code>); <code>just release</code> starts
+the first with <a href="https://codeberg.org/forgejo-contrib/forgejo-cli">fj</a>, or run
+<strong>Prepare release</strong> from the repository’s Actions tab.</p>
+<p>Two secrets, both set by the infrastructure that makes the repository:</p>
+<ul>
+<li><code>RELEASE_TOKEN</code> pushes the commit and tags, because a push made with the
+workflow’s own token starts no workflows: the tags would land and nothing
+would publish them. It is a Forgejo access token with the
+<code>write:repository</code> scope, of a user that may write to this repository
+alone and push to <code>main</code> past its branch protection.</li>
+<li><code>GH_APP_PRIVATE_KEY</code>, with the variable <code>GH_APP_ID</code>, creates the GitHub
+release as a GitHub App with read and write access to contents. Each run
+makes a token from them that lasts an hour and reaches this repository
+alone. GitHub’s copy takes tags only from the mirror, so the workflow adds
+the release to a tag already there.</li>
+</ul>
+<h2 id="the-changelog"><a class="header" href="#the-changelog">The changelog</a></h2>
+<p><code>CHANGELOG.md</code> is written by git-cliff from the commit messages, never by
+hand; to change how it reads, edit <code>cliff.toml</code>. <code>feat</code>, <code>fix</code>, <code>perf</code> and
+<code>revert</code> commits are listed, grouped, with breaking changes first. The other
+types are left out, as work that changes nothing for a user of the generator
+or the runtime.</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-09f2665d.js"></script>
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>
