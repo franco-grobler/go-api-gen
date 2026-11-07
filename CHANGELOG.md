@@ -4,6 +4,14 @@ Every release of the generator and the runtime module, which share a version.
 This file is written by git-cliff from the commit history; edit cliff.toml,
 not the entries.
 
+## [0.2.2](https://github.com/franco-grobler/go-api-gen/compare/v0.2.1...v0.2.2) - 2026-11-07
+
+### Fixes
+
+- **gen** decode and encode format: date as a full-date (#7) ([353c44e](https://github.com/franco-grobler/go-api-gen/commit/353c44e0343138c409b501a5f771b5eda7e411d1))
+- **gen** build writes the unified spec, and check compares it (#3) ([51e241c](https://github.com/franco-grobler/go-api-gen/commit/51e241c59efde6b709da4e2514e17f09be33b3cd))
+- **gen** treat an empty request body as absent (#2) ([713b6b8](https://github.com/franco-grobler/go-api-gen/commit/713b6b86d0336315db5c83d32588e1f49d749930))
+
 ## [0.2.1](https://github.com/franco-grobler/go-api-gen/compare/v0.2.0...v0.2.1) - 2026-10-26
 
 ### Fixes
