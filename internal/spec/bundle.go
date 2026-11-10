@@ -109,6 +109,10 @@ type bundler struct {
 	loader   *Loader
 	names    map[Location]string
 	inlining map[Location]bool
+	// legacy holds the OpenAPI 3.0 schema nodes whose nullability is
+	// translated as they are copied, which only a unified document asks for
+	// (see Loader.legacySchemas).
+	legacy map[*yaml.Node]bool
 }
 
 // components builds the components mapping, holding only schemas. Shared
@@ -168,6 +172,9 @@ func (b *bundler) rewrite(file string, n *yaml.Node) (*yaml.Node, error) {
 	case yaml.MappingNode:
 		if refNode := mapGet(n, "$ref"); refNode != nil {
 			return b.rewriteRef(file, n, refNode)
+		}
+		if b.legacy[n] {
+			n = nullableTo31(n)
 		}
 		out := &yaml.Node{Kind: yaml.MappingNode, Tag: n.Tag, Style: n.Style}
 		for i := 0; i+1 < len(n.Content); i += 2 {

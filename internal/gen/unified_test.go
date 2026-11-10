@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -550,6 +551,70 @@ func TestBuildWritesTheUnifiedSpec(t *testing.T) {
 	}
 	if len(stale) != 0 {
 		t.Errorf("Check after a build = %v, want nothing stale", stale)
+	}
+}
+
+// A service written in OpenAPI 3.0 lands in the 3.1 unified document with its
+// nullable translated, and build, unify, and check all mean that document. One
+// with nullable left as written, as earlier versions wrote it, is stale.
+func TestCheckWantsNullableTranslated(t *testing.T) {
+	files := twoServices()
+	files["services/identity/api.yaml"] = strings.Replace(
+		files["services/identity/api.yaml"],
+		"openapi: 3.1.0", "openapi: 3.0.3", 1)
+	files["schema/user.yaml"] = "components:\n  schemas:\n    User:\n" +
+		"      type: object\n      required: [id]\n      properties:\n" +
+		"        id: { type: string }\n" +
+		"        country: { type: string, nullable: true }\n"
+	dir, g := writeWorkspace(t, files)
+	if _, err := g.Write(); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "gen", "openapi.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	country := mapAt(t, doc, "components", "schemas", "User", "properties",
+		"country")
+	want := map[string]any{"type": []any{"string", "null"}}
+	if !reflect.DeepEqual(country, want) {
+		t.Errorf("country = %v, want %v", country, want)
+	}
+	unified, err := g.Unified()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(unified, data) {
+		t.Errorf("unify writes\n%s\nwant what build wrote\n%s", unified, data)
+	}
+	stale, err := rerun(t, dir).Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 0 {
+		t.Errorf("Check after a build = %v, want nothing stale", stale)
+	}
+
+	untranslated := strings.Replace(string(data),
+		`country: {type: [string, "null"]}`,
+		"country: {type: string, nullable: true}", 1)
+	if untranslated == string(data) {
+		t.Fatalf("country is not written as expected:\n%s", data)
+	}
+	if err := os.WriteFile(path, []byte(untranslated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale, err = rerun(t, dir).Check()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(stale, []string{path}) {
+		t.Errorf("Check = %v, want exactly [%s]", stale, path)
 	}
 }
 

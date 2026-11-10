@@ -288,6 +288,13 @@ func (l *Loader) fill(file string, n *yaml.Node, s *Schema) error {
 				if err != nil {
 					return err
 				}
+				// JSON Schema checks enum apart from type, so a nullable
+				// enum lists null among its values as well. That is
+				// nullability, not a value a Go constant can hold.
+				if val == nil {
+					s.Nullable = true
+					return nil
+				}
 				s.Enum = append(s.Enum, val)
 				return nil
 			})

@@ -3,6 +3,7 @@ package spec
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -182,6 +183,9 @@ components:
     E:
       type: string
       enum: [red, green]
+    NullableEnum:
+      type: [string, "null"]
+      enum: [red, null]
 `})
 	l := NewLoader()
 	load := func(name string) *Schema {
@@ -229,6 +233,14 @@ components:
 
 	if e := load("E"); !e.IsEnum() || len(e.Enum) != 2 {
 		t.Errorf("Enum = %v, want two values", e.Enum)
+	}
+
+	// JSON Schema checks enum apart from type, so a nullable enum lists null
+	// among its values too. That makes it nullable rather than adding a value.
+	ne := load("NullableEnum")
+	if !ne.Nullable || !reflect.DeepEqual(ne.Enum, []any{"red"}) {
+		t.Errorf("Nullable = %v, Enum = %v, want true and [red]",
+			ne.Nullable, ne.Enum)
 	}
 }
 

@@ -65,6 +65,14 @@ func (l *Loader) Unify(opts *UnifyOptions) (*yaml.Node, error) {
 		return nil, err
 	}
 
+	openapi := opts.OpenAPI
+	if openapi == "" {
+		openapi = highestOpenAPI(opts.Sources)
+	}
+	if !legacyOpenAPI(openapi) {
+		b.legacy = l.legacySchemas(opts.Sources, opts.Components)
+	}
+
 	schemes, err := b.mergeSecuritySchemes(opts.Sources)
 	if err != nil {
 		return nil, err
@@ -80,10 +88,6 @@ func (l *Loader) Unify(opts *UnifyOptions) (*yaml.Node, error) {
 	}
 
 	out := &yaml.Node{Kind: yaml.MappingNode, Tag: tagMap}
-	openapi := opts.OpenAPI
-	if openapi == "" {
-		openapi = highestOpenAPI(opts.Sources)
-	}
 	mapSet(out, "openapi", scalar(openapi))
 	mapSet(out, "info", infoNode(opts.Info))
 	if len(opts.Servers) > 0 {
@@ -451,7 +455,9 @@ func quotedScalar(v string) *yaml.Node {
 }
 
 // highestOpenAPI picks the greatest declared version, so stitching a 3.0 and a
-// 3.1 document does not claim to be the older of the two.
+// 3.1 document does not claim to be the older of the two. It is never below
+// 3.1, so the schemas of a 3.0 source have their nullability translated into
+// JSON Schema (see Loader.legacySchemas).
 func highestOpenAPI(sources []UnifySource) string {
 	best := "3.1.0"
 	for _, src := range sources {
